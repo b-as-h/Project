@@ -1,0 +1,27 @@
+# Keil 编译产物
+MDK-ARM/Project/*.axf
+MDK-ARM/Project/*.crf
+MDK-ARM/Project/*.d
+MDK-ARM/Project/*.o
+MDK-ARM/Project/*.htm
+MDK-ARM/Project/*.hex
+MDK-ARM/Project/*.lnp
+MDK-ARM/Project/*.lst
+MDK-ARM/Project/*.map
+MDK-ARM/Project/*.build_log.htm
+MDK-ARM/Project/*_Project.dep
+MDK-ARM/Listings/
+MDK-ARM/Objects/
+
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编译输出目录
+build/
