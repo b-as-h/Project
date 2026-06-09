@@ -1,0 +1,78 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Keil Build & Download",
+            "type": "shell",
+            "command": "C:/Keil_MDK/UV4/UV4.exe",
+            "args": [
+                "-r",
+                "-d",
+                "-j0",
+                "-o", "${workspaceFolder}/build_download_log.txt",
+                "${workspaceFolder}/MDK-ARM/${workspaceFolderBasename}.uvprojx"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": {
+                "owner": "c",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*?)(\\((\\d+),(\\d+)\\))?:\\s+(error|warning):\\s+(.*)$",
+                    "file": 1,
+                    "line": 3,
+                    "column": 4,
+                    "severity": 5,
+                    "message": 6
+                }
+            }
+        },
+        {
+            "label": "Keil Build Only",
+            "type": "shell",
+            "command": "C:/Keil_MDK/UV4/UV4.exe",
+            "args": [
+                "-r",
+                "-j0",
+                "-o", "${workspaceFolder}/build_log.txt",
+                "${workspaceFolder}/MDK-ARM/${workspaceFolderBasename}.uvprojx"
+            ],
+            "problemMatcher": {
+                "owner": "c",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*?)(\\((\\d+),(\\d+)\\))?:\\s+(error|warning):\\s+(.*)$",
+                    "file": 1,
+                    "line": 3,
+                    "column": 4,
+                    "severity": 5,
+                    "message": 6
+                }
+            }
+        },
+        {
+            "label": "Keil Download Only",
+            "type": "shell",
+            "command": "C:/Keil_MDK/UV4/UV4.exe",
+            "args": [
+                "-d",
+                "-o", "${workspaceFolder}/download_log.txt",
+                "${workspaceFolder}/MDK-ARM/${workspaceFolderBasename}.uvprojx"
+            ],
+            "problemMatcher": {
+                "owner": "c",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*?)(\\((\\d+),(\\d+)\\))?:\\s+(error|warning):\\s+(.*)$",
+                    "file": 1,
+                    "line": 3,
+                    "column": 4,
+                    "severity": 5,
+                    "message": 6
+                }
+            }
+        }
+    ]
+}

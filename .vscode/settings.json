@@ -1,0 +1,22 @@
+{
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/MDK-ARM/Listings/**": true,
+        "**/MDK-ARM/Objects/**": true,
+        "**/.git/**": true
+    },
+    "C_Cpp.intelliSenseCacheSize": 1024,
+    "C_Cpp.exclusionPolicy": "checkFilesAndFolders",
+    "search.exclude": {
+        "**/build/**": true,
+        "**/MDK-ARM/Listings/**": true,
+        "**/MDK-ARM/Objects/**": true
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true
+    }
+}
