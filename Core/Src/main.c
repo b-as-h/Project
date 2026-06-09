@@ -49,6 +49,11 @@
 /* USER CODE BEGIN PV */
 uint32_t oled_lasttime = 0;
 char oled_buf[20];
+char oled_uart_buf[20];
+char uart_re[10];
+uint8_t uart_flag = 0;
+uint8_t oled_uart_flag = 0;
+uint8_t blue_switch = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -59,7 +64,14 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) // 需消抖
+{
+  if (huart == &huart1)
+  {
+    uart_flag = 1;
+    HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -68,7 +80,6 @@ void SystemClock_Config(void);
  */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -96,19 +107,43 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(20);
   OLED_Init();
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_11) == GPIO_PIN_RESET) ///////////////需修改
+    {
+      blue_switch = !blue_switch; // 0关
+      if (blue_switch)
+      {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+      }
+      else
+      {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+      }
+    }
     if (HAL_GetTick() - oled_lasttime >= 1000)
     {
+      if (oled_uart_flag == 1)
+      {
+        OLED_PrintString(20, 10, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
+      }
       OLED_NewFrame();
       sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
-      OLED_PrintString(5, 10, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+      sprintf(oled_uart_buf, "UARTRE ON!");
+      OLED_PrintString(0, 10, oled_buf, &font16x16, OLED_COLOR_NORMAL);
       OLED_ShowFrame();
       oled_lasttime = HAL_GetTick();
+    }
+    if (uart_flag == 1 && blue_switch == 1)
+    {
+      uart_flag = 0;
+      HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, 2);
+      oled_uart_flag = 1;
     }
     /* USER CODE END WHILE */
 

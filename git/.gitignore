@@ -1,0 +1,19 @@
+# Keil MDK 编译产物
+MDK-ARM/Project/*.o
+MDK-ARM/Project/*.crf
+MDK-ARM/Project/*.d
+MDK-ARM/Project/*.dep
+MDK-ARM/Project/*.axf
+MDK-ARM/Project/*.hex
+MDK-ARM/Project/*.bin
+MDK-ARM/Project/*.map
+MDK-ARM/Project/*.htm
+MDK-ARM/*.log
+MDK-ARM/*.lock
+
+# Keil 工程临时文件
+*.uvoptx
+*.uvguix.*
+
+# VSCode 配置文件
+.vscode/
