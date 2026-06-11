@@ -48,6 +48,8 @@
 
 /* USER CODE BEGIN PV */
 uint32_t oled_lasttime = 0;
+uint32_t key_lasttime = 0;
+uint8_t key_last_state = 1; // 记录上一次按键状态，1=未按下(GPIO_PIN_SET)
 char oled_buf[20];
 char oled_uart_buf[20];
 char uart_re[10];
@@ -64,7 +66,7 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) // 需消抖
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart == &huart1)
   {
@@ -114,22 +116,28 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_11) == GPIO_PIN_RESET) ///////////////需修改
+    uint8_t key_current = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_11);
+    // 检测下降沿（从未按下变为按下）+ 消抖延时500ms
+    if (key_current == GPIO_PIN_RESET && key_last_state == GPIO_PIN_SET && HAL_GetTick() - key_lasttime >= 500)
     {
-      blue_switch = !blue_switch; // 0关
+      blue_switch = !blue_switch; // 0不接受蓝牙数据
       if (blue_switch)
       {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+        uart_flag = 0;                                      // 清除之前缓存的标志，避免开启蓝牙时误触发
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET); // 写1在蓝牙EN引脚让蓝牙引脚工作
       }
       else
       {
         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
       }
+      key_lasttime = HAL_GetTick();
     }
+    key_last_state = key_current;
     if (HAL_GetTick() - oled_lasttime >= 1000)
     {
       if (oled_uart_flag == 1)
       {
+
         OLED_PrintString(20, 10, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
       }
       OLED_NewFrame();
