@@ -71,7 +71,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   if (huart == &huart1)
   {
     uart_flag = 1;
-    HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
+    HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, sizeof(uart_re) / sizeof(uart_re[0]));
   }
 }
 /* USER CODE END 0 */
@@ -82,6 +82,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
  */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -107,50 +108,49 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(20);
+  HAL_Delay(1000);
   OLED_Init();
-  HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, sizeof(uart_re) / sizeof(uart_re[0]));
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    uint8_t key_current = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_11);
+    uint8_t key_current = HAL_GPIO_ReadPin(Bule_switch_GPIO_Port, Bule_switch_Pin);
     // 检测下降沿（从未按下变为按下）+ 消抖延时500ms
     if (key_current == GPIO_PIN_RESET && key_last_state == GPIO_PIN_SET && HAL_GetTick() - key_lasttime >= 500)
     {
       blue_switch = !blue_switch; // 0不接受蓝牙数据
       if (blue_switch)
       {
-        uart_flag = 0;                                      // 清除之前缓存的标志，避免开启蓝牙时误触发
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET); // 写1在蓝牙EN引脚让蓝牙引脚工作
+        uart_flag = 0;                                                   // 清除之前缓存的标志，避免开启蓝牙时误触发
+        HAL_GPIO_WritePin(Bule_en_GPIO_Port, Bule_en_Pin, GPIO_PIN_SET); // 写1在蓝牙EN引脚让蓝牙引脚工作
       }
       else
       {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(Bule_en_GPIO_Port, Bule_en_Pin, GPIO_PIN_RESET);
       }
       key_lasttime = HAL_GetTick();
     }
     key_last_state = key_current;
     if (HAL_GetTick() - oled_lasttime >= 1000)
     {
-      if (oled_uart_flag == 1)
-      {
-
-        OLED_PrintString(20, 10, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
-      }
       OLED_NewFrame();
+      if (oled_uart_flag == 0)
+      {
+        OLED_PrintString(0, 20, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
+      }
       sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
       sprintf(oled_uart_buf, "UARTRE ON!");
-      OLED_PrintString(0, 10, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+      OLED_PrintString(0, 5, oled_buf, &font16x16, OLED_COLOR_NORMAL);
       OLED_ShowFrame();
       oled_lasttime = HAL_GetTick();
     }
     if (uart_flag == 1 && blue_switch == 1)
     {
       uart_flag = 0;
-      HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, 2);
+      HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, sizeof(uart_re) / sizeof(uart_re[0]));
       oled_uart_flag = 1;
     }
     /* USER CODE END WHILE */
