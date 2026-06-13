@@ -49,10 +49,14 @@
 /* USER CODE BEGIN PV */
 uint32_t oled_lasttime = 0;
 uint32_t key_lasttime = 0;
+uint32_t oled_uart_lasttime = 0;
 uint8_t key_last_state = 1; // 记录上一次按键状态，1=未按下(GPIO_PIN_SET)
 char oled_buf[20];
-char oled_uart_buf[20];
-char uart_re[10];
+char oled_uart_buf[20] = "Initial state";
+// 发送格式:0xAA + 0x设备名 + 0x命令 + 0x校验和后二位;--------------暂未实现
+// 回传:😜(成功) 😢(失败)
+// 设备名:
+char uart_re[2];
 uint8_t uart_flag = 0;
 uint8_t oled_uart_flag = 0;
 uint8_t blue_switch = 0;
@@ -71,7 +75,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   if (huart == &huart1)
   {
     uart_flag = 1;
-    HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, sizeof(uart_re) / sizeof(uart_re[0]));
+    HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
   }
 }
 /* USER CODE END 0 */
@@ -110,7 +114,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
   OLED_Init();
-  HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, sizeof(uart_re) / sizeof(uart_re[0]));
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -125,11 +129,11 @@ int main(void)
       if (blue_switch)
       {
         uart_flag = 0;                                                   // 清除之前缓存的标志，避免开启蓝牙时误触发
-        HAL_GPIO_WritePin(Bule_en_GPIO_Port, Bule_en_Pin, GPIO_PIN_SET); // 写1在蓝牙EN引脚让蓝牙引脚工作
+        HAL_GPIO_WritePin(Blue_en_GPIO_Port, Blue_en_Pin, GPIO_PIN_SET); // 写1在蓝牙EN引脚让蓝牙引脚工作
       }
       else
       {
-        HAL_GPIO_WritePin(Bule_en_GPIO_Port, Bule_en_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(Blue_en_GPIO_Port, Blue_en_Pin, GPIO_PIN_RESET);
       }
       key_lasttime = HAL_GetTick();
     }
@@ -137,20 +141,26 @@ int main(void)
     if (HAL_GetTick() - oled_lasttime >= 1000)
     {
       OLED_NewFrame();
-      if (oled_uart_flag == 0)
+      if (oled_uart_flag == 1 && HAL_GetTick() - oled_uart_lasttime >= 100)
       {
-        OLED_PrintString(0, 20, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
+        sprintf(oled_uart_buf, "BULE_UARTRE: ON");
+        oled_uart_lasttime = HAL_GetTick();
+        oled_uart_flag = 0;
+      }
+      else if (oled_uart_flag == 0 && HAL_GetTick() - oled_uart_lasttime >= 1000) // 正在发送
+      {
+        sprintf(oled_uart_buf, "BULE_UARTRE: OFF");
       }
       sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
-      sprintf(oled_uart_buf, "UARTRE ON!");
-      OLED_PrintString(0, 5, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+      OLED_PrintString(0, 0, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+      OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
       OLED_ShowFrame();
       oled_lasttime = HAL_GetTick();
     }
     if (uart_flag == 1 && blue_switch == 1)
     {
       uart_flag = 0;
-      HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, sizeof(uart_re) / sizeof(uart_re[0]));
+      HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, 2);
       oled_uart_flag = 1;
     }
     /* USER CODE END WHILE */
