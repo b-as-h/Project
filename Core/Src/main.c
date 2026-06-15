@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -48,8 +49,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint32_t key_lasttime = 0;
-uint8_t key_last_state = 1; // 记录上一次按键状态，1=未按下(GPIO_PIN_SET)
 // 发送格式:0xAA + 0x设备名 + 0x命令 + 0x校验和后二位;--------------暂未实现
 // 回传:😜(成功) 😢(失败)
 // 设备名:
@@ -107,39 +106,25 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_USART1_UART_Init();
+  MX_TIM2_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
   OLED_Init();
   HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
+  HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    uint8_t key_current = HAL_GPIO_ReadPin(Bule_switch_GPIO_Port, Bule_switch_Pin);
-    // 检测下降沿（从未按下变为按下）+ 消抖延时500ms
-    if (key_current == GPIO_PIN_RESET && key_last_state == GPIO_PIN_SET && HAL_GetTick() - key_lasttime >= 500)
-    {
-      blue_switch = !blue_switch; // 0不接受蓝牙数据
-      if (blue_switch)
-      {
-        uart_flag = 0;                                                   // 清除之前缓存的标志，避免开启蓝牙时误触发
-        HAL_GPIO_WritePin(Blue_en_GPIO_Port, Blue_en_Pin, GPIO_PIN_SET); // 写1在蓝牙EN引脚让蓝牙引脚工作
-        sprintf(oled_switch_buf, "ON");
-      }
-      else
-      {
-        HAL_GPIO_WritePin(Blue_en_GPIO_Port, Blue_en_Pin, GPIO_PIN_RESET);
-        sprintf(oled_switch_buf, "OFF");
-      }
-      key_lasttime = HAL_GetTick();
-    }
-    key_last_state = key_current;
-
-    start_oled_display();
-    start_uart_process();
-
+    Key_Process();
+    OLED_Display();
+    UART_Process();
+    Encoder();
+    Servo();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

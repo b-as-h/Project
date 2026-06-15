@@ -65,6 +65,8 @@ void Error_Handler(void);
 #define Blue_Tx_GPIO_Port GPIOA
 #define Blue_Rx_Pin GPIO_PIN_10
 #define Blue_Rx_GPIO_Port GPIOA
+#define TIM_PWM_Pin GPIO_PIN_11
+#define TIM_PWM_GPIO_Port GPIOA
 #define Oled_scl_Pin GPIO_PIN_6
 #define Oled_scl_GPIO_Port GPIOB
 #define Oled_sda_Pin GPIO_PIN_7
