@@ -7,6 +7,7 @@ char oled_buf[20];
 char oled_uart_buf[20];
 char oled_switch_buf[3] = "OFF";
 char oled_encoder_buf[20] = "";
+char oled_encoder_buf2[20] = "Encoder MAX:20";
 uint8_t oled_uart_flag = 0;
 
 /* 按键相关变量定义 */
@@ -41,6 +42,7 @@ void OLED_Display(void)
         OLED_PrintString(0, 0, oled_buf, &font16x16, OLED_COLOR_NORMAL);
         OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
         OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
+        OLED_PrintString(0, 45, oled_encoder_buf2, &font16x16, OLED_COLOR_NORMAL);
         OLED_ShowFrame();
         oled_lasttime = HAL_GetTick();
     }
