@@ -4,15 +4,20 @@
 unsigned int oled_lasttime = 0;
 unsigned int oled_uart_lasttime = 0;
 char oled_buf[20];
-char oled_uart_buf[20];
-char oled_switch_buf[3] = "OFF";
+char oled_uart_buf[20] = "UART1:OFF   ED";
+char oled_switch_buf[4] = "OFF";
 char oled_encoder_buf[20] = "";
-char oled_encoder_buf2[20] = "AngleMAX:180º";
+char oled_ui_buf[20] = "";
 uint8_t oled_uart_flag = 0;
+uint8_t oled_ui = 1;
+uint8_t key_flag_0 = 0;
+uint8_t key_flag_1 = 0;
 
 /* 按键相关变量定义 */
-uint32_t key_lasttime = 0;
-uint8_t key_last_state = 1; // 记录上一次按键状态，1=未按下(GPIO_PIN_SET)
+uint32_t key_lasttime_0 = 0;
+uint32_t key_lasttime_1 = 0;
+uint8_t key_last_state_0 = 1; // 记录上一次按键状态，1=未按下(GPIO_PIN_SET)
+uint8_t key_last_state_1 = 0; // 外接高电平,故反过来
 
 uint32_t Count = 0; // 旋转编码器
 
@@ -23,28 +28,41 @@ uint8_t duty = 0;
  */
 void OLED_Display(void)
 {
-    if (HAL_GetTick() - oled_lasttime >= 50)
+    if (HAL_GetTick() - oled_lasttime >= 100)
     {
-        OLED_NewFrame();
-        if (oled_uart_flag == 1 && HAL_GetTick() - oled_uart_lasttime >= 100) // 正在发送
+        if (oled_ui == 1)
         {
-            sprintf(oled_uart_buf, "UART1:%s   ING", oled_switch_buf);
-            oled_uart_lasttime = HAL_GetTick();
-            oled_uart_flag = 0;
-        }
-        else if (oled_uart_flag == 0 && HAL_GetTick() - oled_uart_lasttime >= 1000)
-        {
-            sprintf(oled_uart_buf, "UART1:%s   ED", oled_switch_buf);
-        }
+            OLED_NewFrame();
+            if (oled_uart_flag == 1 && HAL_GetTick() - oled_uart_lasttime >= 100) // 正在发送
+            {
+                sprintf(oled_uart_buf, "UART1:%s   ING", oled_switch_buf);
+                oled_uart_lasttime = HAL_GetTick();
+                oled_uart_flag = 0;
+            }
+            else if (oled_uart_flag == 0 && HAL_GetTick() - oled_uart_lasttime >= 1000)
+            {
+                sprintf(oled_uart_buf, "UART1:%s   ED", oled_switch_buf);
+            }
 
-        sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
-        sprintf(oled_encoder_buf, "Angle: %dº", Count);
-        OLED_PrintString(0, 0, oled_buf, &font16x16, OLED_COLOR_NORMAL);
-        OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
-        OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
-        OLED_PrintString(0, 45, oled_encoder_buf2, &font16x16, OLED_COLOR_NORMAL);
-        OLED_ShowFrame();
-        oled_lasttime = HAL_GetTick();
+            sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
+            sprintf(oled_encoder_buf, "Angle: %dº", Count * 180 / count_MAX);
+            sprintf(oled_ui_buf, "       ①");
+            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 30, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 45, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
+
+            OLED_ShowFrame();
+            oled_lasttime = HAL_GetTick();
+        }
+        if (oled_ui == 2)
+        {
+            OLED_NewFrame();
+            sprintf(oled_ui_buf, "       ②");
+            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_ShowFrame();
+            oled_lasttime = HAL_GetTick();
+        }
     }
 }
 
@@ -53,10 +71,12 @@ void OLED_Display(void)
  */
 void Key_Process(void)
 {
-    uint8_t key_current = HAL_GPIO_ReadPin(Bule_switch_GPIO_Port, Bule_switch_Pin);
+    uint8_t key_current_0 = HAL_GPIO_ReadPin(Bule_switch_GPIO_Port, Bule_switch_Pin);
+    uint8_t key_current_1 = HAL_GPIO_ReadPin(oled_ui_GPIO_Port, oled_ui_Pin);
     // 检测下降沿（从未按下变为按下）+ 消抖延时500ms
-    if (key_current == GPIO_PIN_RESET && key_last_state == GPIO_PIN_SET && HAL_GetTick() - key_lasttime >= 500)
+    if (key_current_0 == GPIO_PIN_RESET && key_last_state_0 == GPIO_PIN_SET && HAL_GetTick() - key_lasttime_0 >= 500)
     {
+        key_flag_0 = 1;
         blue_switch = !blue_switch; // 0不接受蓝牙数据
         if (blue_switch)
         {
@@ -69,9 +89,23 @@ void Key_Process(void)
             HAL_GPIO_WritePin(Blue_en_GPIO_Port, Blue_en_Pin, GPIO_PIN_RESET);
             sprintf(oled_switch_buf, "OFF");
         }
-        key_lasttime = HAL_GetTick();
+        key_lasttime_0 = HAL_GetTick();
     }
-    key_last_state = key_current;
+
+    key_last_state_0 = key_current_0;
+
+    if (key_current_1 == GPIO_PIN_SET && key_last_state_1 == GPIO_PIN_RESET && HAL_GetTick() - key_lasttime_1 >= 500)
+    {
+        key_flag_1 = 1;
+        oled_ui++;
+        if (oled_ui > 2)
+        {
+            oled_ui = 1;
+        }
+        key_lasttime_1 = HAL_GetTick();
+    }
+
+    key_last_state_1 = key_current_1;
 }
 
 /**
@@ -109,6 +143,5 @@ void Servo(void) // 舵机控制   2.5%~12.5%占空比
         }
     }
     duty = (10 * Count / (float)count_MAX + 2.5) / 100 * 2000;
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, duty);
-    // HAL_Delay(10);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
 }

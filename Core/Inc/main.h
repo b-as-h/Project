@@ -59,17 +59,17 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define Bule_switch_Pin GPIO_PIN_11
 #define Bule_switch_GPIO_Port GPIOB
+#define oled_ui_Pin GPIO_PIN_12
+#define oled_ui_GPIO_Port GPIOB
 #define Blue_en_Pin GPIO_PIN_8
 #define Blue_en_GPIO_Port GPIOA
-#define Blue_Tx_Pin GPIO_PIN_9
-#define Blue_Tx_GPIO_Port GPIOA
-#define Blue_Rx_Pin GPIO_PIN_10
-#define Blue_Rx_GPIO_Port GPIOA
-#define TIM_PWM_Pin GPIO_PIN_11
-#define TIM_PWM_GPIO_Port GPIOA
-#define Oled_scl_Pin GPIO_PIN_6
+#define Blue_Tx_Pin GPIO_PIN_6
+#define Blue_Tx_GPIO_Port GPIOB
+#define Blue_Rx_Pin GPIO_PIN_7
+#define Blue_Rx_GPIO_Port GPIOB
+#define Oled_scl_Pin GPIO_PIN_8
 #define Oled_scl_GPIO_Port GPIOB
-#define Oled_sda_Pin GPIO_PIN_7
+#define Oled_sda_Pin GPIO_PIN_9
 #define Oled_sda_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */

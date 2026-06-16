@@ -58,6 +58,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(Bule_switch_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : oled_ui_Pin */
+  GPIO_InitStruct.Pin = oled_ui_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(oled_ui_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : Blue_en_Pin */
   GPIO_InitStruct.Pin = Blue_en_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
