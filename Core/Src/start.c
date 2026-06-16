@@ -1,9 +1,18 @@
 #include "start.h"
 
+// 构思:
+// 一屏:欢迎页,作者相关信息
+// 二屏:雷达页面
+// 三屏:ADC环境监测
+// 四屏:电机风扇
+
 /* OLED相关变量定义 */
 unsigned int oled_lasttime = 0;
 unsigned int oled_uart_lasttime = 0;
 char oled_buf[20];
+char oled_buf_name[20];
+char oled_buf_number[20];
+char oled_buf_num[10];
 char oled_uart_buf[20] = "UART1:OFF   ED";
 char oled_switch_buf[4] = "OFF";
 char oled_encoder_buf[20] = "";
@@ -33,6 +42,22 @@ void OLED_Display(void)
         if (oled_ui == 1)
         {
             OLED_NewFrame();
+            sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 100);
+            sprintf(oled_ui_buf, "       ①");
+            sprintf(oled_buf_name, "BASH");
+            sprintf(oled_buf_number, "15899935428");
+            sprintf(oled_buf_num, "PhoneNum:");
+            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 0, oled_buf_name, &font16x16, OLED_COLOR_REVERSED);
+            OLED_PrintString(0, 30, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 45, oled_buf_number, &font16x16, OLED_COLOR_NORMAL);
+            OLED_ShowFrame();
+            oled_lasttime = HAL_GetTick();
+        }
+        if (oled_ui == 2)
+        {
+            OLED_NewFrame();
             if (oled_uart_flag == 1 && HAL_GetTick() - oled_uart_lasttime >= 100) // 正在发送
             {
                 sprintf(oled_uart_buf, "UART1:%s   ING", oled_switch_buf);
@@ -43,23 +68,11 @@ void OLED_Display(void)
             {
                 sprintf(oled_uart_buf, "UART1:%s   ED", oled_switch_buf);
             }
-
-            sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
-            sprintf(oled_encoder_buf, "Angle: %dº", Count * 180 / count_MAX);
-            sprintf(oled_ui_buf, "       ①");
-            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 30, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 45, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
-
-            OLED_ShowFrame();
-            oled_lasttime = HAL_GetTick();
-        }
-        if (oled_ui == 2)
-        {
-            OLED_NewFrame();
             sprintf(oled_ui_buf, "       ②");
+            sprintf(oled_encoder_buf, "Angle: %dº", Count * 180 / count_MAX);
             OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_ShowFrame();
             oled_lasttime = HAL_GetTick();
         }
@@ -113,7 +126,7 @@ void Key_Process(void)
  */
 void UART_Process(void)
 {
-    if (uart_flag == 1 && blue_switch == 1)
+    if (uart_flag == 1 && blue_switch == 1 && oled_ui == 2)
     {
         uart_flag = 0;
         HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, 2);
@@ -123,25 +136,31 @@ void UART_Process(void)
 
 void Encoder(void) // 旋转编码器
 {
-    Count = __HAL_TIM_GET_COUNTER(&htim2);
+    if (oled_ui == 2)
+    {
+        Count = __HAL_TIM_GET_COUNTER(&htim2);
+    }
 }
 
 void Servo(void) // 舵机控制   2.5%~12.5%占空比
 //                              0~180度
 {
-    if (Count > count_MAX)
+    if (oled_ui == 2)
     {
-        if (Count > 60000)
+        if (Count > count_MAX)
         {
-            Count = 0;
-            __HAL_TIM_SET_COUNTER(&htim2, Count);
+            if (Count > 60000)
+            {
+                Count = 0;
+                __HAL_TIM_SET_COUNTER(&htim2, Count);
+            }
+            else
+            {
+                Count = count_MAX;
+                __HAL_TIM_SET_COUNTER(&htim2, count_MAX);
+            }
         }
-        else
-        {
-            Count = count_MAX;
-            __HAL_TIM_SET_COUNTER(&htim2, count_MAX);
-        }
+        duty = (10 * Count / (float)count_MAX + 2.5) / 100 * 2000;
+        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
     }
-    duty = (10 * Count / (float)count_MAX + 2.5) / 100 * 2000;
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
 }
