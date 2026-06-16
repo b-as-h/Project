@@ -1,7 +1,7 @@
 #include "start.h"
 
 // 构思:
-// 一屏:欢迎页,作者相关信息
+// 一屏:欢迎页,门禁锁
 // 二屏:雷达页面
 // 三屏:ADC环境监测
 // 四屏:电机风扇
@@ -11,8 +11,8 @@ unsigned int oled_lasttime = 0;
 unsigned int oled_uart_lasttime = 0;
 char oled_buf[20];
 char oled_buf_name[20];
-char oled_buf_number[20];
-char oled_buf_num[10];
+char oled_buf_num[20];
+char oled_num_result[10];
 char oled_uart_buf[20] = "UART1:OFF   ED";
 char oled_switch_buf[4] = "OFF";
 char oled_encoder_buf[20] = "";
@@ -45,13 +45,13 @@ void OLED_Display(void)
             sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 100);
             sprintf(oled_ui_buf, "       ①");
             sprintf(oled_buf_name, "BASH");
-            sprintf(oled_buf_number, "15899935428");
-            sprintf(oled_buf_num, "PhoneNum:");
+            sprintf(oled_num_result, "Right"); //
+            sprintf(oled_buf_num, "PassWord:");
             OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_PrintString(0, 0, oled_buf_name, &font16x16, OLED_COLOR_REVERSED);
             OLED_PrintString(0, 30, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 45, oled_buf_number, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(90, 30, oled_num_result, &font16x16, OLED_COLOR_REVERSED);
             OLED_ShowFrame();
             oled_lasttime = HAL_GetTick();
         }
