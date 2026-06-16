@@ -7,7 +7,7 @@ char oled_buf[20];
 char oled_uart_buf[20];
 char oled_switch_buf[3] = "OFF";
 char oled_encoder_buf[20] = "";
-char oled_encoder_buf2[20] = "Encoder MAX:20";
+char oled_encoder_buf2[20] = "AngleMAX:180º";
 uint8_t oled_uart_flag = 0;
 
 /* 按键相关变量定义 */
@@ -38,7 +38,7 @@ void OLED_Display(void)
         }
 
         sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 1000);
-        sprintf(oled_encoder_buf, "Encoder: %d", Count);
+        sprintf(oled_encoder_buf, "Angle: %dº", Count);
         OLED_PrintString(0, 0, oled_buf, &font16x16, OLED_COLOR_NORMAL);
         OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
         OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
