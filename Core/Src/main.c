@@ -129,6 +129,11 @@ int main(void)
       Encoder();
       Servo();
     }
+    // 密码输入状态下，也读取编码器
+    if (Lock == 1 && lock_state == LOCK_INPUT)
+    {
+      Encoder();
+    }
 
     /* USER CODE END WHILE */
 
