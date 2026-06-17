@@ -6,6 +6,8 @@
 // 三屏:ADC环境监测
 // 四屏:电机风扇
 
+#define tick_Max 200
+
 /* OLED相关变量定义 */
 unsigned int oled_lasttime = 0;
 unsigned int oled_uart_lasttime = 0;
@@ -21,14 +23,17 @@ uint8_t oled_uart_flag = 0;
 uint8_t oled_ui = 1;
 uint8_t key_flag_0 = 0;
 uint8_t key_flag_1 = 0;
+uint8_t tick = tick_Max; // 倒计时,为0时候上锁
+uint8_t Lock = 0;        // 1为上锁
 
 /* 按键相关变量定义 */
 uint32_t key_lasttime_0 = 0;
 uint32_t key_lasttime_1 = 0;
-uint8_t key_last_state_0 = 1; // 记录上一次按键状态，1=未按下(GPIO_PIN_SET)
-uint8_t key_last_state_1 = 0; // 外接高电平,故反过来
+uint8_t key_last_state_0 = 1;
+uint8_t key_last_state_1 = 0;
 
-uint32_t Count = 0; // 旋转编码器
+uint32_t Count = 0;
+uint32_t Count_2;
 
 #define count_MAX 20
 uint8_t duty = 0;
@@ -39,10 +44,20 @@ void OLED_Display(void)
 {
     if (HAL_GetTick() - oled_lasttime >= 100)
     {
+        if (Lock == 1)
+        {
+            return;
+        }
         if (oled_ui == 1)
         {
+            tick--;
+            if (tick == 0)
+            {
+                tick = tick_Max;
+                Lock = 1;
+            }
             OLED_NewFrame();
-            sprintf(oled_buf, "OLED_Test:%d", HAL_GetTick() / 100);
+            sprintf(oled_buf, "OLED_Time:%d", tick);
             sprintf(oled_ui_buf, "       ①");
             sprintf(oled_buf_name, "BASH");
             sprintf(oled_num_result, "Right"); //
@@ -109,11 +124,16 @@ void Key_Process(void)
 
     if (key_current_1 == GPIO_PIN_SET && key_last_state_1 == GPIO_PIN_RESET && HAL_GetTick() - key_lasttime_1 >= 500)
     {
-        key_flag_1 = 1;
         oled_ui++;
+        key_flag_1 = 1;
         if (oled_ui > 2)
         {
             oled_ui = 1;
+        }
+        if (oled_ui == 2)
+        {
+            Count = Count_2;
+            __HAL_TIM_SET_COUNTER(&htim2, Count);
         }
         key_lasttime_1 = HAL_GetTick();
     }
@@ -136,31 +156,26 @@ void UART_Process(void)
 
 void Encoder(void) // 旋转编码器
 {
-    if (oled_ui == 2)
-    {
-        Count = __HAL_TIM_GET_COUNTER(&htim2);
-    }
+    Count = __HAL_TIM_GET_COUNTER(&htim2);
 }
 
 void Servo(void) // 舵机控制   2.5%~12.5%占空比
 //                              0~180度
 {
-    if (oled_ui == 2)
+    if (Count > count_MAX)
     {
-        if (Count > count_MAX)
+        if (Count > 60000)
         {
-            if (Count > 60000)
-            {
-                Count = 0;
-                __HAL_TIM_SET_COUNTER(&htim2, Count);
-            }
-            else
-            {
-                Count = count_MAX;
-                __HAL_TIM_SET_COUNTER(&htim2, count_MAX);
-            }
+            Count = 0;
+            __HAL_TIM_SET_COUNTER(&htim2, Count);
         }
-        duty = (10 * Count / (float)count_MAX + 2.5) / 100 * 2000;
-        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
+        else
+        {
+            Count = count_MAX;
+            __HAL_TIM_SET_COUNTER(&htim2, count_MAX);
+        }
     }
+    Count_2 = Count;
+    duty = (10 * Count / (float)count_MAX + 2.5) / 100 * 2000;
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
 }

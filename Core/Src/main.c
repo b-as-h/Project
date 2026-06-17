@@ -124,8 +124,12 @@ int main(void)
     Key_Process();
     OLED_Display();
     UART_Process();
-    Encoder();
-    Servo();
+    if (oled_ui == 2)
+    {
+      Encoder();
+      Servo();
+    }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
