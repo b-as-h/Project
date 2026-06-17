@@ -22,6 +22,8 @@ extern uint8_t key_last_state_0;
 extern uint8_t key_last_state_1;
 extern uint32_t Count;
 extern uint8_t oled_ui;
+extern uint8_t Servo_lock;
+extern uint32_t servo_last_count;
 
 /* 函数声明 */
 void Key_Process(void);

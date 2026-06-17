@@ -6,7 +6,7 @@
 // 三屏:ADC环境监测
 // 四屏:电机风扇
 
-#define tick_Max 200
+#define tick_Max 20
 
 /* OLED相关变量定义 */
 unsigned int oled_lasttime = 0;            // OLED刷新时间戳
@@ -14,15 +14,18 @@ unsigned int oled_uart_lasttime = 0;       // UART显示时间戳
 char oled_buf[20];                         // 显示缓冲区(倒计时)
 char oled_buf_name[20];                    // 显示缓冲区(名称)
 char oled_buf_num[20];                     // 显示缓冲区(密码)
-char oled_num_result[10];                  // 显示缓冲区(结果)
 char oled_uart_buf[20] = "UART1:OFF   ED"; // 显示缓冲区(UART状态)
 char oled_switch_buf[4] = "OFF";           // 显示缓冲区(蓝牙开关)
 char oled_encoder_buf[20] = "";            // 显示缓冲区(编码器角度)
 char oled_ui_buf[20] = "";                 // 显示缓冲区(页面标识)
-uint8_t oled_uart_flag = 0;                // UART发送中标志
-uint8_t oled_ui = 1;                       // 当前页面编号
-uint8_t tick = tick_Max;                   // 倒计时,为0时候上锁
-uint8_t Lock = 0;                          // 1为上锁
+char oled_servo_lock[10] = "";
+char oled_lock[10] = "";
+uint8_t oled_uart_flag = 0; // UART发送中标志
+uint8_t oled_ui = 1;        // 当前页面编号
+uint8_t tick = tick_Max;    // 倒计时,为0时候上锁
+uint8_t Lock = 0;           // 1为上锁
+uint8_t Servo_lock = 0;
+uint32_t servo_last_count = 0; // 保存上锁时的编码器值
 
 /* 按键相关变量定义 */
 uint32_t key_lasttime_0 = 0;  // PB11蓝牙按键消抖时间
@@ -30,7 +33,7 @@ uint32_t key_lasttime_1 = 0;  // PB12切屏按键消抖时间
 uint32_t key_lasttime_2 = 0;  // PB10功能按键消抖时间
 uint8_t key_last_state_0 = 1; // PB11上拉，未按下=1
 uint8_t key_last_state_1 = 0; // PB12下拉，未按下=0
-uint8_t key_last_state_2 = 1; // PB10上拉，未按下=1
+uint8_t key_last_state_2 = 0; // PB10下拉，未按下=0
 
 uint32_t Count = 0; // 编码器计数值
 uint32_t Count_2;   // 切屏时保存编码器值
@@ -44,8 +47,13 @@ void OLED_Display(void)
 {
     if (HAL_GetTick() - oled_lasttime >= 100)
     {
-        if (Lock == 1)
+        if (Lock == 1) // 上锁
         {
+            OLED_NewFrame();
+            sprintf(oled_lock, "已上锁");
+            OLED_PrintString(40, 0, oled_lock, &font16x16, OLED_COLOR_REVERSED);
+            OLED_PrintString(47, 40, oled_buf_name, &font16x16, OLED_COLOR_REVERSED);
+            OLED_ShowFrame();
             return;
         }
         if (oled_ui == 1)
@@ -53,20 +61,20 @@ void OLED_Display(void)
             tick--;
             if (tick == 0)
             {
-                tick = tick_Max;
                 Lock = 1;
+                tick = tick_Max;
             }
             OLED_NewFrame();
             sprintf(oled_buf, "OLED_Time:%d", tick);
             sprintf(oled_ui_buf, "       ①");
             sprintf(oled_buf_name, "BASH");
-            sprintf(oled_num_result, "Right"); //
             sprintf(oled_buf_num, "PassWord:");
+            sprintf(oled_lock, "已解锁");
+            OLED_PrintString(80, 0, oled_lock, &font16x16, OLED_COLOR_REVERSED);
             OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_PrintString(0, 0, oled_buf_name, &font16x16, OLED_COLOR_REVERSED);
             OLED_PrintString(0, 30, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(90, 30, oled_num_result, &font16x16, OLED_COLOR_REVERSED);
             OLED_ShowFrame();
             oled_lasttime = HAL_GetTick();
         }
@@ -83,11 +91,20 @@ void OLED_Display(void)
             {
                 sprintf(oled_uart_buf, "UART1:%s   ED", oled_switch_buf);
             }
+            if (Servo_lock == 1)
+            {
+                sprintf(oled_servo_lock, "已上锁");
+            }
+            if (Servo_lock == 0)
+            {
+                sprintf(oled_servo_lock, "已解锁");
+            }
             sprintf(oled_ui_buf, "       ②");
             sprintf(oled_encoder_buf, "Angle: %dº", Count * 180 / count_MAX);
             OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
             OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
+            OLED_PrintString(80, 0, oled_servo_lock, &font16x16, OLED_COLOR_REVERSED);
             OLED_ShowFrame();
             oled_lasttime = HAL_GetTick();
         }
@@ -101,7 +118,7 @@ void Key_Process(void)
 {
     uint8_t key_current_0 = HAL_GPIO_ReadPin(Bule_switch_GPIO_Port, Bule_switch_Pin);
     uint8_t key_current_1 = HAL_GPIO_ReadPin(oled_ui_GPIO_Port, oled_ui_Pin);
-    uint8_t key_current_2 = HAL_GPIO_ReadPin(ui_key_GPIO_Port, ui_key_Pin);
+    uint8_t key_current_2 = HAL_GPIO_ReadPin(confirm_key_GPIO_Port, confirm_key_Pin);
     // 检测下降沿（从未按下变为按下）+ 消抖延时500ms
     if (key_current_0 == GPIO_PIN_RESET && key_last_state_0 == GPIO_PIN_SET && HAL_GetTick() - key_lasttime_0 >= 500)
     {
@@ -139,9 +156,23 @@ void Key_Process(void)
 
     key_last_state_1 = key_current_1;
 
-    // PB10 ui_key 按键检测（上拉输入，下降沿触发）
-    if (key_current_2 == GPIO_PIN_RESET && key_last_state_2 == GPIO_PIN_SET && HAL_GetTick() - key_lasttime_2 >= 500)
+    // PB10 confirm_key 按键检测
+    if (key_current_2 == GPIO_PIN_SET && key_last_state_2 == GPIO_PIN_RESET && HAL_GetTick() - key_lasttime_2 >= 200)
     {
+        if (oled_ui == 2)
+        {
+            if (Servo_lock == 1) // 从上锁变为解锁，恢复之前的位置
+            {
+                Servo_lock = 0;
+                __HAL_TIM_SET_COUNTER(&htim2, servo_last_count);
+                Count = servo_last_count;
+            }
+            else // 从解锁变为上锁，保存当前位置
+            {
+                servo_last_count = __HAL_TIM_GET_COUNTER(&htim2);
+                Servo_lock = 1;
+            }
+        }
         key_lasttime_2 = HAL_GetTick();
     }
     key_last_state_2 = key_current_2;
