@@ -49,9 +49,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-// 发送格式:0xAA + 0x设备名 + 0x命令 + 0x校验和后二位;--------------暂未实现
-// 回传:😜(成功) 😢(失败)
-// 设备名:
 char uart_re[2];
 uint8_t uart_flag = 0;
 uint8_t blue_switch = 0;
