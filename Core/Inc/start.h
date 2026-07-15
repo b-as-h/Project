@@ -4,6 +4,7 @@
 #include "main.h"
 #include "oled.h"
 #include "usart.h"
+#include "adc.h"
 #include <string.h>
 #include <stdio.h>
 #include "tim.h"
@@ -49,5 +50,6 @@ void OLED_Display(void);
 void UART_Process(void);
 void Encoder(void);
 void Servo(void);
+void Sensor_Process(void);
 
 #endif

@@ -57,6 +57,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define Temperature_Humidity_Pin GPIO_PIN_7
+#define Temperature_Humidity_GPIO_Port GPIOA
+#define Light_do_Pin GPIO_PIN_0
+#define Light_do_GPIO_Port GPIOB
+#define Light_ao_Pin GPIO_PIN_1
+#define Light_ao_GPIO_Port GPIOB
 #define confirm_key_Pin GPIO_PIN_10
 #define confirm_key_GPIO_Port GPIOB
 #define Bule_switch_Pin GPIO_PIN_11
@@ -65,14 +71,10 @@ void Error_Handler(void);
 #define oled_ui_GPIO_Port GPIOB
 #define Blue_en_Pin GPIO_PIN_8
 #define Blue_en_GPIO_Port GPIOA
-#define Blue_Tx_Pin GPIO_PIN_6
-#define Blue_Tx_GPIO_Port GPIOB
-#define Blue_Rx_Pin GPIO_PIN_7
-#define Blue_Rx_GPIO_Port GPIOB
-#define Oled_scl_Pin GPIO_PIN_8
-#define Oled_scl_GPIO_Port GPIOB
-#define Oled_sda_Pin GPIO_PIN_9
-#define Oled_sda_GPIO_Port GPIOB
+#define Blue_Tx_Pin GPIO_PIN_9
+#define Blue_Tx_GPIO_Port GPIOA
+#define Blue_Rx_Pin GPIO_PIN_10
+#define Blue_Rx_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 

@@ -52,6 +52,12 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(Blue_en_GPIO_Port, Blue_en_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : Light_do_Pin */
+  GPIO_InitStruct.Pin = Light_do_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(Light_do_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pins : confirm_key_Pin Bule_switch_Pin */
   GPIO_InitStruct.Pin = confirm_key_Pin|Bule_switch_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
