@@ -306,20 +306,20 @@ void OLED_Display(void)
                 sprintf(oled_light, "☀");
 
             // 读取各ADC通道
-            uint32_t light_adc  = Read_ADC_Channel(ADC_CHANNEL_9);          // PB1 光敏
-            uint32_t temp_adc   = Read_ADC_Channel(ADC_CHANNEL_TEMPSENSOR); // 片内温度
-            uint32_t vref_adc   = Read_ADC_Channel(ADC_CHANNEL_VREFINT);   // 内部参考电压
+            uint32_t light_adc = Read_ADC_Channel(ADC_CHANNEL_9);         // PB1 光敏
+            uint32_t temp_adc = Read_ADC_Channel(ADC_CHANNEL_TEMPSENSOR); // 片内温度
+            uint32_t vref_adc = Read_ADC_Channel(ADC_CHANNEL_VREFINT);    // 内部参考电压
 
             // 计算光强百分比 (反算: 越暗ADC值越大)
             uint16_t light_percent = (4095 - light_adc) * 100 / 4095;
 
-            // 计算片内温度: T = (VSENSE - V25) / Avg_Slope + 25
-            // V25=1.43V, Avg_Slope=4.3mV/°C, VDDA≈3.3V
-            float vsense = (float)temp_adc * 3.3f / 4095.0f;
-            int8_t chip_temp = (int8_t)((vsense - 1.43f) / 0.0043f + 25.0f);
-
+            // 计算片内温度: 用实际VDDA代替固定3.3V, 更准确
+            // T = (VSENSE - V25) / Avg_Slope + 25
+            // V25=1.43V, Avg_Slope=4.3mV/°C
             // 计算实际VDDA电压: VDDA = 1.20V * 4095 / VREFINT_ADC
             float vdda = 1.20f * 4095.0f / (float)vref_adc;
+            float vsense = (float)temp_adc * vdda / 4095.0f;
+            int8_t chip_temp = (int8_t)((vsense - 1.43f) / 0.0043f + 25.0f);
 
             // 显示
             char oled_light_str[10], oled_line2[20], oled_line3[20];
@@ -332,7 +332,7 @@ void OLED_Display(void)
             {
                 sprintf(oled_line2, "T:--.C H:--%%");
             }
-            sprintf(oled_line3, "C:%d.C V:%.2fV", chip_temp, (double)vdda);
+            sprintf(oled_line3, "C: %dC   V:%.2fV", chip_temp, (double)vdda);
 
             // 第1行: 页码 + 晴/暗图标
             OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);

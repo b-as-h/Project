@@ -113,6 +113,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
   OLED_Init();
+  HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_UART_Receive_IT(&huart1, (uint8_t *)uart_re, 2);
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
