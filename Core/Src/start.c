@@ -110,7 +110,6 @@ void OLED_Display(void)
             }
             OLED_NewFrame();
             sprintf(oled_buf, "OLED_Time:%d", tick);
-            sprintf(oled_ui_buf, "       ①");
             sprintf(oled_buf_name, "BASH");
 
             sprintf(oled_lock, "已解锁");
