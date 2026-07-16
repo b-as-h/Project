@@ -75,6 +75,8 @@ void Error_Handler(void);
 #define Blue_Tx_GPIO_Port GPIOA
 #define Blue_Rx_Pin GPIO_PIN_10
 #define Blue_Rx_GPIO_Port GPIOA
+#define T_Pin GPIO_PIN_11
+#define T_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 

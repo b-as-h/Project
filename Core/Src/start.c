@@ -81,17 +81,23 @@ static void delay_us(uint32_t us)
         ;
 }
 
-// 等待引脚到指定电平, 超时返回-1
-static int wait_pin_level(uint8_t level, uint32_t timeout_us)
+// 等待引脚到指定电平, 超时返回-1 (通用版本)
+static int wait_pin_level_ex(GPIO_TypeDef *port, uint16_t pin, uint8_t level, uint32_t timeout_us)
 {
     uint32_t start = DWT->CYCCNT;
     uint32_t ticks = timeout_us * (SystemCoreClock / 1000000);
-    while (HAL_GPIO_ReadPin(Temperature_Humidity_GPIO_Port, Temperature_Humidity_Pin) != level)
+    while (HAL_GPIO_ReadPin(port, pin) != level)
     {
         if ((DWT->CYCCNT - start) > ticks)
             return -1;
     }
     return 0;
+}
+
+// 等待引脚到指定电平, 超时返回-1 (DHT11专用, PA7)
+static int wait_pin_level(uint8_t level, uint32_t timeout_us)
+{
+    return wait_pin_level_ex(Temperature_Humidity_GPIO_Port, Temperature_Humidity_Pin, level, timeout_us);
 }
 
 // 读取DHT11 (单总线协议)
@@ -165,6 +171,145 @@ static DHT11_Data Read_DHT11(void)
     }
 
     return data;
+}
+
+/* ========== DS18B20 ========== */
+// DS18B20 温度数据 (0.01°C精度)
+static int16_t ds18b20_temp = 0; // 温度×100, 正数, 无效时 = -32768
+static uint8_t ds18b20_valid = 0;
+static uint32_t ds18b20_lasttime = 0;
+static uint8_t ds18b20_converting = 0; // 1=正在转换
+
+// 配置DS18B20引脚为推挽输出
+static void DS18B20_SetOutput(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = T_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(T_GPIO_Port, &GPIO_InitStruct);
+}
+
+// 配置DS18B20引脚为输入
+static void DS18B20_SetInput(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = T_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(T_GPIO_Port, &GPIO_InitStruct);
+}
+
+// DS18B20 复位 + 检测存在
+static uint8_t DS18B20_Reset(void)
+{
+    DS18B20_SetOutput();
+    HAL_GPIO_WritePin(T_GPIO_Port, T_Pin, GPIO_PIN_RESET);
+    delay_us(480); // 拉低 480μs
+    DS18B20_SetInput();
+    delay_us(80); // 等待 80μs 后采样
+    uint8_t presence = (HAL_GPIO_ReadPin(T_GPIO_Port, T_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    delay_us(400);   // 等待剩余时间
+    return presence; // 1=存在, 0=无设备
+}
+
+// 写1位
+static void DS18B20_WriteBit(uint8_t bit)
+{
+    DS18B20_SetOutput();
+    HAL_GPIO_WritePin(T_GPIO_Port, T_Pin, GPIO_PIN_RESET);
+    delay_us(5);
+    if (bit)
+        HAL_GPIO_WritePin(T_GPIO_Port, T_Pin, GPIO_PIN_SET);
+    delay_us(60);
+    DS18B20_SetInput();
+    delay_us(2);
+}
+
+// 读1位
+static uint8_t DS18B20_ReadBit(void)
+{
+    uint8_t bit;
+    DS18B20_SetOutput();
+    HAL_GPIO_WritePin(T_GPIO_Port, T_Pin, GPIO_PIN_RESET);
+    delay_us(2);
+    DS18B20_SetInput();
+    delay_us(10);
+    bit = (HAL_GPIO_ReadPin(T_GPIO_Port, T_Pin) == GPIO_PIN_SET) ? 1 : 0;
+    delay_us(50);
+    return bit;
+}
+
+// 写1字节 (LSB first)
+static void DS18B20_WriteByte(uint8_t data)
+{
+    for (int i = 0; i < 8; i++)
+    {
+        DS18B20_WriteBit(data & 1);
+        data >>= 1;
+    }
+}
+
+// 读1字节 (LSB first)
+static uint8_t DS18B20_ReadByte(void)
+{
+    uint8_t data = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        data >>= 1;
+        if (DS18B20_ReadBit())
+            data |= 0x80;
+    }
+    return data;
+}
+
+// 读取DS18B20温度 (返回 温度×100)
+// 成功返回 > -500, 失败返回 -32768
+static int16_t Read_DS18B20(void)
+{
+    uint8_t presence;
+    uint8_t temp_l, temp_h;
+    int16_t raw;
+
+    // 复位 + 检测存在
+    presence = DS18B20_Reset();
+    if (!presence)
+        return -32768;
+
+    // 跳过ROM
+    DS18B20_WriteByte(0xCC);
+    // 启动温度转换
+    DS18B20_WriteByte(0x44);
+
+    // 等待转换完成 (DS18B20在转换中拉低总线, 完成后释放)
+    DS18B20_SetInput();
+    uint32_t wait_start = HAL_GetTick();
+    while (HAL_GPIO_ReadPin(T_GPIO_Port, T_Pin) == GPIO_PIN_RESET)
+    {
+        if (HAL_GetTick() - wait_start > 1000)
+            return -32768; // 超时
+    }
+
+    // 复位 + 检测存在
+    presence = DS18B20_Reset();
+    if (!presence)
+        return -32768;
+
+    // 跳过ROM
+    DS18B20_WriteByte(0xCC);
+    // 读暂存器
+    DS18B20_WriteByte(0xBE);
+
+    // 读温度低字节 + 高字节
+    temp_l = DS18B20_ReadByte();
+    temp_h = DS18B20_ReadByte();
+
+    // 合并为12位有符号值
+    raw = (int16_t)((temp_h << 8) | temp_l);
+
+    // 转换为 0.01°C: raw × 100 / 16
+    return raw * 100 / 16;
 }
 
 /* ========== ADC 通用读取 ========== */
@@ -298,7 +443,8 @@ void OLED_Display(void)
         if (oled_ui == 3)
         {
             OLED_NewFrame();
-            sprintf(oled_ui_buf, "③");
+
+            sprintf(oled_ui_buf, "       ③");
             Light_do = HAL_GPIO_ReadPin(Light_do_GPIO_Port, Light_do_Pin);
             if (Light_do)
                 sprintf(oled_light, "☪");
@@ -324,13 +470,28 @@ void OLED_Display(void)
             // 显示
             char oled_light_str[10], oled_line2[20], oled_line3[20];
             sprintf(oled_light_str, "L:%d%%", light_percent);
-            if (dht11_data.valid)
+
+            // 第3行: DS18B20温度(保留两位小数) + DHT11湿度
+            if (ds18b20_valid && dht11_data.valid)
             {
-                sprintf(oled_line2, "T:%d.C H:%d%%", dht11_data.temp, dht11_data.humi);
+                int16_t t = ds18b20_temp;
+                sprintf(oled_line2, "T:%d.%02dC H:%d%%",
+                        t / 100, (t > 0 ? t : -t) % 100,
+                        dht11_data.humi);
+            }
+            else if (ds18b20_valid)
+            {
+                int16_t t = ds18b20_temp;
+                sprintf(oled_line2, "T:%d.%02dC H:--%%",
+                        t / 100, (t > 0 ? t : -t) % 100);
+            }
+            else if (dht11_data.valid)
+            {
+                sprintf(oled_line2, "T:--.--C H:%d%%", dht11_data.humi);
             }
             else
             {
-                sprintf(oled_line2, "T:--.C H:--%%");
+                sprintf(oled_line2, "T:--.--C H:--%%");
             }
             sprintf(oled_line3, "C: %dC   V:%.2fV", chip_temp, (double)vdda);
 
@@ -539,14 +700,32 @@ void Servo(void) // 舵机控制   2.5%~12.5%占空比
 }
 
 /**
- * @brief 传感器定时读取 (每2秒读一次DHT11)
+ * @brief 传感器定时读取
+ * @note  DHT11每2秒读一次(仅取湿度), DS18B20每2秒读一次(温度更准)
  * @note  在main.c的主循环中调用
  */
 void Sensor_Process(void)
 {
+    // DHT11 每2秒读一次 (仅用湿度)
     if (HAL_GetTick() - dht11_lasttime >= 2000)
     {
         dht11_data = Read_DHT11();
         dht11_lasttime = HAL_GetTick();
+    }
+
+    // DS18B20 每2秒读一次
+    if (HAL_GetTick() - ds18b20_lasttime >= 2000)
+    {
+        int16_t temp = Read_DS18B20();
+        if (temp > -500)
+        {
+            ds18b20_temp = temp;
+            ds18b20_valid = 1;
+        }
+        else
+        {
+            ds18b20_valid = 0;
+        }
+        ds18b20_lasttime = HAL_GetTick();
     }
 }
