@@ -1,13 +1,13 @@
 /**
  * @file    oled.c
  * @brief   SSD1306 OLED驱动 (I2C接口, 128x64分辨率)
- * @anchor  波特律动(keysking 博哥在学习)
- * @version 1.1 (优化版)
- * @date    2023-08-19
+ * @author  BASH
+ * @version 1.1
+ * @date    2024
  * @license MIT License
  *
  * @attention
- * 本驱动库针对波特律动·keysking的STM32教程学习套件进行开发
+ * 本驱动库适用于STM32F103系列微控制器
  * 在其他平台或驱动芯片上使用可能需要进行移植
  *
  * @note 硬件连接:
@@ -817,7 +817,7 @@ void OLED_DrawEllipse(uint8_t x, uint8_t y, uint8_t a, uint8_t b, OLED_ColorMode
  *               - img->w: 图片宽度(像素)
  *               - img->h: 图片高度(像素)
  *               - img->data: 图片数据指针 (列行式排列)
- *               - 使用波特律动LED取模工具生成: https://led.baud-dance.com
+ *               - 使用LED取模工具生成
  * @param  color 颜色模式
  *               - OLED_COLOR_NORMAL:  正常显示
  *               - OLED_COLOR_REVERSED: 反色显示
@@ -929,7 +929,7 @@ uint8_t _OLED_GetUTF8Len(char *string)
  *
  * @note   为保证中文正常显示:
  *         1. 编译器字符集必须设置为UTF-8
- *         2. 中文字模需使用波特律动LED取模工具生成: https://led.baud-dance.com
+ *         2. 中文字模需使用LED取模工具生成
  *
  * @note   字库数据格式:
  *         每个字符条目 = 4字节UTF-8编码 + ceil(h/8)*w 字节字模数据

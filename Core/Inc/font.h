@@ -16,7 +16,7 @@ extern const ASCIIFont afont24x12;
 /**
  * @brief 字体结构体
  * @note  字库前4字节存储utf8编码 剩余字节存储字模数据
- * @note 字库数据可以使用波特律动LED取模助手生成(https://led.baud-dance.com)
+ * @note 字库数据可以使用LED取模助手生成
  */
 typedef struct Font {
   uint8_t h;              // 字高度
@@ -30,7 +30,7 @@ extern const Font font16x16;
 
 /**
  * @brief 图片结构体
- * @note  图片数据可以使用波特律动LED取模助手生成(https://led.baud-dance.com)
+ * @note  图片数据可以使用LED取模助手生成
  */
 typedef struct Image {
   uint8_t w;           // 图片宽度

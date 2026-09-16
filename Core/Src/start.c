@@ -1,20 +1,22 @@
 #include "start.h"
+#include "menu.h"
+#include "mpu6050.h"
 
-// 构思:
-// 蓝牙发送格式:0xAA + 0x设备名 + 0x命令 + 0x校验和后二位;--------------暂未实现
-// 回传:😜(成功) 😢(失败)
-// 设备名:
-// 一屏:欢迎页,门禁锁,婴儿防误食
-// 二屏:雷达页面,雷达锁
-// 三屏:ADC环境监测
-// 四屏:电机风扇
+// 系统状态管理
+// APP_LOCKED: 锁定状态，显示密码输入界面
+// APP_MENU: 主菜单状态，显示菜单选项
+// APP_FUNCTION: 功能页面状态，显示具体功能
 
 #define tick_Max 20
+
+/* 应用状态变量 */
+AppState app_state = APP_LOCKED;     // 初始状态为锁定
+uint8_t current_function_id = 0;     // 当前功能页面ID
 
 /* OLED相关变量定义 */
 unsigned int oled_lasttime = 0;            // OLED刷新时间戳
 unsigned int oled_uart_lasttime = 0;       // UART显示时间戳
-char oled_buf[20];                         // 显示缓冲区(倒计时)
+char oled_buf[20];                         // 显示缓冲区
 char oled_buf_name[20];                    // 显示缓冲区(名称)
 char oled_buf_num[20];                     // 显示缓冲区(密码)
 char oled_uart_buf[20] = "UART1:OFF   ED"; // 显示缓冲区(UART状态)
@@ -25,9 +27,9 @@ char oled_servo_lock[10] = "";
 char oled_lock[10] = "";
 char oled_light[20] = "";
 uint8_t oled_uart_flag = 0; // UART发送中标志
-uint8_t oled_ui = 1;        // 当前页面编号
+uint8_t oled_ui = 1;        // 当前页面编号（用于功能页面内部）
 uint8_t tick = tick_Max;    // 倒计时,为0时候上锁
-uint8_t Lock = 0;           // 1为上锁
+uint8_t Lock = 1;           // 1为上锁，初始为锁定状态
 uint8_t Servo_lock = 0;
 uint32_t servo_last_count = 0; // 保存上锁时的编码器值
 uint8_t Light_do = 0;
@@ -53,6 +55,10 @@ uint8_t input[PASSWORD_LEN] = {0};             // 用户输入
 uint8_t input_index = 0;                       // 当前输入第几位
 uint8_t select_num = 0;                        // 当前选择的数字(0-9)
 uint8_t error_count = 0;                       // 错误次数
+
+/* MPU6050相关变量 */
+MPU6050_t mpu6050_data;
+uint8_t mpu6050_initialized = 0;
 
 /* ========== DHT11 温湿度 ========== */
 typedef struct
@@ -340,182 +346,290 @@ static uint32_t Read_ADC_Channel(uint32_t channel)
 }
 
 /**
+ * @brief 初始化菜单系统
+ */
+void Menu_System_Init(void)
+{
+    // 初始化菜单系统
+    Menu_Init();
+
+    // 创建主菜单 (ID: 0)
+    Menu_CreateMenu(0, "主菜单", 0);
+
+    // 添加菜单项到主菜单
+    Menu_AddItem(0, FUNC_WELCOME, "欢迎解锁");
+    Menu_AddItem(0, FUNC_SERVO_ULTRA, "舵机控制");
+    Menu_AddItem(0, FUNC_SENSOR, "传感器");
+    Menu_AddItem(0, FUNC_MPU6050, "MPU6050");
+}
+
+/**
+ * @brief MPU6050初始化
+ */
+void MPU6050_System_Init(void)
+{
+    if (MPU6050_Init(&hi2c1) == 0)
+    {
+        mpu6050_initialized = 1;
+    }
+}
+
+/**
+ * @brief 显示锁定界面（密码输入）
+ */
+static void Display_Locked(void)
+{
+    OLED_NewFrame();
+    sprintf(oled_lock, "已上锁");
+    OLED_PrintString(0, 0, oled_lock, &font16x16, OLED_COLOR_NORMAL);
+
+    // 显示密码输入状态
+    if (lock_state == LOCK_IDLE)
+    {
+        sprintf(oled_buf_num, "PassWord:");
+        OLED_PrintString(0, 15, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
+        sprintf(oled_buf, "Err:%d/%d", error_count, MAX_ERROR_COUNT);
+        OLED_PrintString(0, 30, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+    }
+    else if (lock_state == LOCK_INPUT)
+    {
+        sprintf(oled_buf_num, "PassWord:");
+        OLED_PrintString(0, 15, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
+        // 显示已输入的星号
+        char pwd_display[10] = "";
+        for (int i = 0; i < input_index; i++)
+        {
+            pwd_display[i] = '*';
+        }
+        pwd_display[input_index] = '\0';
+        OLED_PrintString(90, 15, pwd_display, &font16x16, OLED_COLOR_NORMAL);
+        // 显示当前选择的数字
+        sprintf(oled_buf, "Num:%d", select_num);
+        OLED_PrintString(0, 30, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+    }
+    else if (lock_state == LOCK_ALARM)
+    {
+        sprintf(oled_buf_num, "ERROR!");
+        OLED_PrintString(0, 15, oled_buf_num, &font16x16, OLED_COLOR_REVERSED);
+        sprintf(oled_buf, "Try again");
+        OLED_PrintString(0, 30, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+    }
+
+    OLED_PrintString(90, 0, oled_buf_name, &font16x16, OLED_COLOR_NORMAL);
+    OLED_ShowFrame();
+}
+
+/**
+ * @brief 显示欢迎与解锁界面
+ */
+static void Display_Welcome(void)
+{
+    tick--;
+    if (tick == 0)
+    {
+        Lock = 1;
+        app_state = APP_LOCKED;
+        tick = tick_Max;
+        lock_state = LOCK_IDLE;
+        return;
+    }
+    
+    OLED_NewFrame();
+    sprintf(oled_buf, "OLED_Time:%d", tick);
+    sprintf(oled_ui_buf, "欢迎");
+    sprintf(oled_buf_name, "BASH");
+
+    sprintf(oled_lock, "已解锁");
+    OLED_PrintString(80, 0, oled_lock, &font16x16, OLED_COLOR_REVERSED);
+    OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+    OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+    OLED_PrintString(0, 0, oled_buf_name, &font16x16, OLED_COLOR_REVERSED);
+
+    OLED_ShowFrame();
+}
+
+/**
+ * @brief 显示舵机与超声波界面
+ */
+static void Display_Servo_Ultrasonic(void)
+{
+    OLED_NewFrame();
+    
+    if (oled_uart_flag == 1 && HAL_GetTick() - oled_uart_lasttime >= 100) // 正在发送
+    {
+        sprintf(oled_uart_buf, "UART1:%s   ING", oled_switch_buf);
+        oled_uart_lasttime = HAL_GetTick();
+        oled_uart_flag = 0;
+    }
+    else if (oled_uart_flag == 0 && HAL_GetTick() - oled_uart_lasttime >= 1000)
+    {
+        sprintf(oled_uart_buf, "UART1:%s   ED", oled_switch_buf);
+    }
+    
+    if (Servo_lock == 1)
+    {
+        sprintf(oled_servo_lock, "已上锁");
+    }
+    if (Servo_lock == 0)
+    {
+        sprintf(oled_servo_lock, "已解锁");
+    }
+    
+    sprintf(oled_ui_buf, "舵机控制");
+    sprintf(oled_encoder_buf, "Angle: %d°", Count * 180 / count_MAX);
+    OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+    OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
+    OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
+    OLED_PrintString(80, 0, oled_servo_lock, &font16x16, OLED_COLOR_REVERSED);
+    OLED_ShowFrame();
+}
+
+/**
+ * @brief 显示传感器界面
+ */
+static void Display_Sensor(void)
+{
+    OLED_NewFrame();
+
+    sprintf(oled_ui_buf, "传感器");
+    Light_do = HAL_GPIO_ReadPin(Light_do_GPIO_Port, Light_do_Pin);
+    if (Light_do)
+        sprintf(oled_light, "☪");
+    else
+        sprintf(oled_light, "☀");
+
+    // 读取各ADC通道
+    uint32_t light_adc = Read_ADC_Channel(ADC_CHANNEL_9);         // PB1 光敏
+    uint32_t temp_adc = Read_ADC_Channel(ADC_CHANNEL_TEMPSENSOR); // 片内温度
+    uint32_t vref_adc = Read_ADC_Channel(ADC_CHANNEL_VREFINT);    // 内部参考电压
+
+    // 计算光强百分比 (反算: 越暗ADC值越大)
+    uint16_t light_percent = (4095 - light_adc) * 100 / 4095;
+
+    // 计算片内温度: 用实际VDDA代替固定3.3V, 更准确
+    // T = (VSENSE - V25) / Avg_Slope + 25
+    // V25=1.43V, Avg_Slope=4.3mV/°C
+    // 计算实际VDDA电压: VDDA = 1.20V * 4095 / VREFINT_ADC
+    float vdda = 1.20f * 4095.0f / (float)vref_adc;
+    float vsense = (float)temp_adc * vdda / 4095.0f;
+    int8_t chip_temp = (int8_t)((vsense - 1.43f) / 0.0043f + 25.0f);
+
+    // 显示
+    char oled_light_str[10], oled_line2[20], oled_line3[20];
+    sprintf(oled_light_str, "L:%d%%", light_percent);
+
+    // 第3行: DS18B20温度(保留两位小数) + DHT11湿度
+    if (ds18b20_valid && dht11_data.valid)
+    {
+        int16_t t = ds18b20_temp;
+        sprintf(oled_line2, "T:%d.%02dC H:%d%%",
+                t / 100, (t > 0 ? t : -t) % 100,
+                dht11_data.humi);
+    }
+    else if (ds18b20_valid)
+    {
+        int16_t t = ds18b20_temp;
+        sprintf(oled_line2, "T:%d.%02dC H:--%%",
+                t / 100, (t > 0 ? t : -t) % 100);
+    }
+    else if (dht11_data.valid)
+    {
+        sprintf(oled_line2, "T:--.--C H:%d%%", dht11_data.humi);
+    }
+    else
+    {
+        sprintf(oled_line2, "T:--.--C H:--%%");
+    }
+    sprintf(oled_line3, "C: %dC   V:%.2fV", chip_temp, (double)vdda);
+
+    // 第1行: 页码 + 晴/暗图标
+    OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
+    OLED_PrintString(32, 0, oled_light, &font16x16, OLED_COLOR_NORMAL);
+    // 第2行: 亮度百分比
+    OLED_PrintString(0, 16, oled_light_str, &font16x16, OLED_COLOR_NORMAL);
+    // 第3行: 外部温湿度
+    OLED_PrintString(0, 32, oled_line2, &font16x16, OLED_COLOR_NORMAL);
+    // 第4行: 片内温度 + 电压
+    OLED_PrintString(0, 48, oled_line3, &font16x16, OLED_COLOR_NORMAL);
+    OLED_ShowFrame();
+}
+
+/**
+ * @brief 显示MPU6050界面
+ */
+static void Display_MPU6050(void)
+{
+    if (!mpu6050_initialized)
+    {
+        OLED_NewFrame();
+        OLED_PrintString(0, 0, "MPU6050", &font16x16, OLED_COLOR_NORMAL);
+        OLED_PrintString(0, 16, "初始化失败", &font16x16, OLED_COLOR_NORMAL);
+        OLED_ShowFrame();
+        return;
+    }
+
+    // 读取MPU6050数据
+    MPU6050_Read_All(&hi2c1, &mpu6050_data);
+
+    OLED_NewFrame();
+    
+    char line1[20], line2[20], line3[20], line4[20];
+    
+    // 第1行: 标题
+    OLED_PrintString(0, 0, "MPU6050", &font16x16, OLED_COLOR_NORMAL);
+    
+    // 第2行: 加速度
+    sprintf(line1, "A:%.1f,%.1f,%.1f", mpu6050_data.Ax, mpu6050_data.Ay, mpu6050_data.Az);
+    OLED_PrintString(0, 16, line1, &font16x16, OLED_COLOR_NORMAL);
+    
+    // 第3行: 陀螺仪
+    sprintf(line2, "G:%.1f,%.1f,%.1f", mpu6050_data.Gx, mpu6050_data.Gy, mpu6050_data.Gz);
+    OLED_PrintString(0, 32, line2, &font16x16, OLED_COLOR_NORMAL);
+    
+    // 第4行: 温度
+    sprintf(line3, "T:%.1fC", mpu6050_data.Temperature);
+    OLED_PrintString(0, 48, line3, &font16x16, OLED_COLOR_NORMAL);
+    
+    OLED_ShowFrame();
+}
+
+/**
  * @brief OLED显示刷新
  */
 void OLED_Display(void)
 {
     if (HAL_GetTick() - oled_lasttime >= 100)
     {
-        if (Lock == 1) // 上锁
+        switch (app_state)
         {
-            OLED_NewFrame();
-            sprintf(oled_lock, "已上锁");
-            OLED_PrintString(0, 0, oled_lock, &font16x16, OLED_COLOR_NORMAL);
-
-            // 显示密码输入状态
-            if (lock_state == LOCK_IDLE)
+        case APP_LOCKED:
+            Display_Locked();
+            break;
+            
+        case APP_MENU:
+            Menu_Show();
+            break;
+            
+        case APP_FUNCTION:
+            switch (current_function_id)
             {
-                sprintf(oled_buf_num, "PassWord:");
-                OLED_PrintString(0, 15, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
-                sprintf(oled_buf, "Err:%d/%d", error_count, MAX_ERROR_COUNT);
-                OLED_PrintString(0, 30, oled_buf, &font16x16, OLED_COLOR_NORMAL);
+            case FUNC_WELCOME:
+                Display_Welcome();
+                break;
+            case FUNC_SERVO_ULTRA:
+                Display_Servo_Ultrasonic();
+                break;
+            case FUNC_SENSOR:
+                Display_Sensor();
+                break;
+            case FUNC_MPU6050:
+                Display_MPU6050();
+                break;
             }
-            else if (lock_state == LOCK_INPUT)
-            {
-                sprintf(oled_buf_num, "PassWord:");
-                OLED_PrintString(0, 15, oled_buf_num, &font16x16, OLED_COLOR_NORMAL);
-                // 显示已输入的星号
-                char pwd_display[10] = "";
-                for (int i = 0; i < input_index; i++)
-                {
-                    pwd_display[i] = '*';
-                }
-                pwd_display[input_index] = '\0';
-                OLED_PrintString(90, 15, pwd_display, &font16x16, OLED_COLOR_NORMAL);
-                // 显示当前选择的数字
-                sprintf(oled_buf, "Num:%d", select_num);
-                OLED_PrintString(0, 30, oled_buf, &font16x16, OLED_COLOR_NORMAL);
-            }
-            else if (lock_state == LOCK_ALARM)
-            {
-                sprintf(oled_buf_num, "ERROR!");
-                OLED_PrintString(0, 15, oled_buf_num, &font16x16, OLED_COLOR_REVERSED);
-                sprintf(oled_buf, "Try again");
-                OLED_PrintString(0, 30, oled_buf, &font16x16, OLED_COLOR_NORMAL);
-            }
-
-            OLED_PrintString(90, 0, oled_buf_name, &font16x16, OLED_COLOR_NORMAL);
-            OLED_ShowFrame();
-            return;
+            break;
         }
-        if (oled_ui == 1)
-        {
-            tick--;
-            if (tick == 0)
-            {
-                Lock = 1;
-                tick = tick_Max;
-            }
-            OLED_NewFrame();
-            sprintf(oled_buf, "OLED_Time:%d", tick);
-            sprintf(oled_ui_buf, "       ①");
-            sprintf(oled_buf_name, "BASH");
-
-            sprintf(oled_lock, "已解锁");
-            OLED_PrintString(80, 0, oled_lock, &font16x16, OLED_COLOR_REVERSED);
-            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 15, oled_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 0, oled_buf_name, &font16x16, OLED_COLOR_REVERSED);
-
-            OLED_ShowFrame();
-            oled_lasttime = HAL_GetTick();
-        }
-        if (oled_ui == 2)
-        {
-            OLED_NewFrame();
-            if (oled_uart_flag == 1 && HAL_GetTick() - oled_uart_lasttime >= 100) // 正在发送
-            {
-                sprintf(oled_uart_buf, "UART1:%s   ING", oled_switch_buf);
-                oled_uart_lasttime = HAL_GetTick();
-                oled_uart_flag = 0;
-            }
-            else if (oled_uart_flag == 0 && HAL_GetTick() - oled_uart_lasttime >= 1000)
-            {
-                sprintf(oled_uart_buf, "UART1:%s   ED", oled_switch_buf);
-            }
-            if (Servo_lock == 1)
-            {
-                sprintf(oled_servo_lock, "已上锁");
-            }
-            if (Servo_lock == 0)
-            {
-                sprintf(oled_servo_lock, "已解锁");
-            }
-            sprintf(oled_ui_buf, "       ②");
-            sprintf(oled_encoder_buf, "Angle: %dº", Count * 180 / count_MAX);
-            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 15, oled_uart_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(0, 30, oled_encoder_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(80, 0, oled_servo_lock, &font16x16, OLED_COLOR_REVERSED);
-            OLED_ShowFrame();
-            oled_lasttime = HAL_GetTick();
-        }
-        if (oled_ui == 3)
-        {
-            OLED_NewFrame();
-
-            sprintf(oled_ui_buf, "       ③");
-            Light_do = HAL_GPIO_ReadPin(Light_do_GPIO_Port, Light_do_Pin);
-            if (Light_do)
-                sprintf(oled_light, "☪");
-            else
-                sprintf(oled_light, "☀");
-
-            // 读取各ADC通道
-            uint32_t light_adc = Read_ADC_Channel(ADC_CHANNEL_9);         // PB1 光敏
-            uint32_t temp_adc = Read_ADC_Channel(ADC_CHANNEL_TEMPSENSOR); // 片内温度
-            uint32_t vref_adc = Read_ADC_Channel(ADC_CHANNEL_VREFINT);    // 内部参考电压
-
-            // 计算光强百分比 (反算: 越暗ADC值越大)
-            uint16_t light_percent = (4095 - light_adc) * 100 / 4095;
-
-            // 计算片内温度: 用实际VDDA代替固定3.3V, 更准确
-            // T = (VSENSE - V25) / Avg_Slope + 25
-            // V25=1.43V, Avg_Slope=4.3mV/°C
-            // 计算实际VDDA电压: VDDA = 1.20V * 4095 / VREFINT_ADC
-            float vdda = 1.20f * 4095.0f / (float)vref_adc;
-            float vsense = (float)temp_adc * vdda / 4095.0f;
-            int8_t chip_temp = (int8_t)((vsense - 1.43f) / 0.0043f + 25.0f);
-
-            // 显示
-            char oled_light_str[10], oled_line2[20], oled_line3[20];
-            sprintf(oled_light_str, "L:%d%%", light_percent);
-
-            // 第3行: DS18B20温度(保留两位小数) + DHT11湿度
-            if (ds18b20_valid && dht11_data.valid)
-            {
-                int16_t t = ds18b20_temp;
-                sprintf(oled_line2, "T:%d.%02dC H:%d%%",
-                        t / 100, (t > 0 ? t : -t) % 100,
-                        dht11_data.humi);
-            }
-            else if (ds18b20_valid)
-            {
-                int16_t t = ds18b20_temp;
-                sprintf(oled_line2, "T:%d.%02dC H:--%%",
-                        t / 100, (t > 0 ? t : -t) % 100);
-            }
-            else if (dht11_data.valid)
-            {
-                sprintf(oled_line2, "T:--.--C H:%d%%", dht11_data.humi);
-            }
-            else
-            {
-                sprintf(oled_line2, "T:--.--C H:--%%");
-            }
-            sprintf(oled_line3, "C: %dC   V:%.2fV", chip_temp, (double)vdda);
-
-            // 第1行: 页码 + 晴/暗图标
-            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_PrintString(32, 0, oled_light, &font16x16, OLED_COLOR_NORMAL);
-            // 第2行: 亮度百分比
-            OLED_PrintString(0, 16, oled_light_str, &font16x16, OLED_COLOR_NORMAL);
-            // 第3行: 外部温湿度
-            OLED_PrintString(0, 32, oled_line2, &font16x16, OLED_COLOR_NORMAL);
-            // 第4行: 片内温度 + 电压
-            OLED_PrintString(0, 48, oled_line3, &font16x16, OLED_COLOR_NORMAL);
-            OLED_ShowFrame();
-            oled_lasttime = HAL_GetTick();
-        }
-        if (oled_ui == 4)
-        {
-            OLED_NewFrame();
-            sprintf(oled_ui_buf, "       ④");
-
-            OLED_PrintString(0, 0, oled_ui_buf, &font16x16, OLED_COLOR_NORMAL);
-            OLED_ShowFrame();
-            oled_lasttime = HAL_GetTick();
-        }
+        
+        oled_lasttime = HAL_GetTick();
     }
 }
 
@@ -547,60 +661,67 @@ void Key_Process(void)
     }
     key_last_state_0 = key_current_0;
 
-    // PB12 切屏/提交密码 按键检测
-    if (key_current_1 == GPIO_PIN_SET && key_last_state_1 == GPIO_PIN_RESET && HAL_GetTick() - key_lasttime_1 >= 500)
+    // PB12 按键检测（根据当前状态执行不同功能）
+    if (key_current_1 == GPIO_PIN_SET && key_last_state_1 == GPIO_PIN_RESET && HAL_GetTick() - key_lasttime_1 >= 200)
     {
-        if (Lock == 1 && lock_state == LOCK_INPUT)
+        switch (app_state)
         {
-            // 提交密码进行验证
-            uint8_t correct = 1;
-            for (int i = 0; i < PASSWORD_LEN; i++)
+        case APP_LOCKED:
+            // 锁定状态下，提交密码进行验证
+            if (lock_state == LOCK_INPUT)
             {
-                if (input[i] != password[i])
+                uint8_t correct = 1;
+                for (int i = 0; i < PASSWORD_LEN; i++)
                 {
-                    correct = 0;
-                    break;
+                    if (input[i] != password[i])
+                    {
+                        correct = 0;
+                        break;
+                    }
                 }
-            }
-            if (correct)
-            {
-                // 密码正确，解锁
-                Lock = 0;
-                lock_state = LOCK_IDLE;
-                error_count = 0;
-                input_index = 0;
-                tick = tick_Max;
-            }
-            else
-            {
-                // 密码错误
-                error_count++;
-                if (error_count >= MAX_ERROR_COUNT)
+                if (correct)
                 {
-                    lock_state = LOCK_ALARM;
+                    // 密码正确，解锁，进入菜单状态
+                    Lock = 0;
+                    lock_state = LOCK_IDLE;
+                    error_count = 0;
+                    input_index = 0;
+                    tick = tick_Max;
+                    app_state = APP_MENU;
                 }
                 else
                 {
-                    lock_state = LOCK_IDLE;
+                    // 密码错误
+                    error_count++;
+                    if (error_count >= MAX_ERROR_COUNT)
+                    {
+                        lock_state = LOCK_ALARM;
+                    }
+                    else
+                    {
+                        lock_state = LOCK_IDLE;
+                    }
+                    input_index = 0;
                 }
-                input_index = 0;
             }
-        }
-        else if (Lock == 0)
-        {
-            // 解锁状态下切换页面
-            oled_ui++;
-            if (oled_ui > 4)
+            break;
+            
+        case APP_MENU:
+            // 菜单状态下，此按键无功能（或者可以用于其他功能）
+            break;
+            
+        case APP_FUNCTION:
+            // 功能页面状态下，退出返回主菜单
+            app_state = APP_MENU;
+            current_function_id = 0;
+            // 重置欢迎页面的倒计时
+            if (current_function_id == FUNC_WELCOME)
             {
-                oled_ui = 1;
-                tick = 20;
+                tick = tick_Max;
             }
-            if (oled_ui == 2)
-            {
-                Count = Count_2;
-                __HAL_TIM_SET_COUNTER(&htim2, Count);
-            }
+            break;
         }
+        
         key_lasttime_1 = HAL_GetTick();
     }
     key_last_state_1 = key_current_1;
@@ -608,9 +729,10 @@ void Key_Process(void)
     // PB10 confirm_key (EC11按下) 按键检测
     if (key_current_2 == GPIO_PIN_SET && key_last_state_2 == GPIO_PIN_RESET && HAL_GetTick() - key_lasttime_2 >= 200)
     {
-        if (Lock == 1)
+        switch (app_state)
         {
-            // 密码输入状态
+        case APP_LOCKED:
+            // 锁定状态下，用于密码输入确认
             if (lock_state == LOCK_IDLE || lock_state == LOCK_ALARM)
             {
                 // 进入输入状态
@@ -626,16 +748,70 @@ void Key_Process(void)
                 select_num = 0;
                 if (input_index >= PASSWORD_LEN)
                 {
-                    // 输入完成，等待PB12提交
-                    // 可以在这里自动提交，或者等待PB12
+                    // 输入完成，自动提交验证
+                    uint8_t correct = 1;
+                    for (int i = 0; i < PASSWORD_LEN; i++)
+                    {
+                        if (input[i] != password[i])
+                        {
+                            correct = 0;
+                            break;
+                        }
+                    }
+                    if (correct)
+                    {
+                        // 密码正确，解锁，进入菜单状态
+                        Lock = 0;
+                        lock_state = LOCK_IDLE;
+                        error_count = 0;
+                        input_index = 0;
+                        tick = tick_Max;
+                        app_state = APP_MENU;
+                    }
+                    else
+                    {
+                        // 密码错误
+                        error_count++;
+                        if (error_count >= MAX_ERROR_COUNT)
+                        {
+                            lock_state = LOCK_ALARM;
+                        }
+                        else
+                        {
+                            lock_state = LOCK_IDLE;
+                        }
+                        input_index = 0;
+                    }
                 }
             }
-        }
-        else
-        {
-            // 解锁状态下，切换舵机锁
-            if (oled_ui == 2)
+            break;
+            
+        case APP_MENU:
+            // 菜单状态下，确认选择菜单项
             {
+                uint8_t selected_id = Menu_GetSelectedItemId();
+                if (selected_id > 0)
+                {
+                    // 进入功能页面
+                    app_state = APP_FUNCTION;
+                    current_function_id = selected_id;
+                    
+                    // 如果是舵机页面，恢复编码器值
+                    if (current_function_id == FUNC_SERVO_ULTRA)
+                    {
+                        Count = Count_2;
+                        __HAL_TIM_SET_COUNTER(&htim2, Count);
+                    }
+                }
+            }
+            break;
+            
+        case APP_FUNCTION:
+            // 功能页面状态下，根据当前页面执行不同功能
+            switch (current_function_id)
+            {
+            case FUNC_SERVO_ULTRA:
+                // 舵机页面，切换舵机锁定状态
                 if (Servo_lock == 1) // 从上锁变为解锁，恢复之前的位置
                 {
                     Servo_lock = 0;
@@ -647,8 +823,11 @@ void Key_Process(void)
                     servo_last_count = __HAL_TIM_GET_COUNTER(&htim2);
                     Servo_lock = 1;
                 }
+                break;
             }
+            break;
         }
+        
         key_lasttime_2 = HAL_GetTick();
     }
     key_last_state_2 = key_current_2;
@@ -659,7 +838,7 @@ void Key_Process(void)
  */
 void UART_Process(void)
 {
-    if (uart_flag == 1 && blue_switch == 1 && oled_ui == 2)
+    if (uart_flag == 1 && blue_switch == 1 && current_function_id == FUNC_SERVO_ULTRA)
     {
         uart_flag = 0;
         HAL_UART_Transmit_IT(&huart1, (uint8_t *)uart_re, 2);
@@ -671,10 +850,50 @@ void Encoder(void) // 旋转编码器
 {
     Count = __HAL_TIM_GET_COUNTER(&htim2);
 
-    // 密码输入状态下，将编码器值转换为数字0-9
-    if (Lock == 1 && lock_state == LOCK_INPUT)
+    switch (app_state)
     {
-        select_num = Count % 10;
+    case APP_LOCKED:
+        // 锁定状态下，编码器用于密码输入
+        if (lock_state == LOCK_INPUT)
+        {
+            select_num = Count % 10;
+        }
+        break;
+        
+    case APP_MENU:
+        // 菜单状态下，编码器用于菜单滚动
+        // 获取编码器变化方向
+        {
+            static int32_t last_encoder_value = 0;
+            int32_t current_value = (int32_t)Count;
+            int32_t diff = current_value - last_encoder_value;
+            
+            if (diff > 0)
+            {
+                Menu_KeyDown();
+            }
+            else if (diff < 0)
+            {
+                Menu_KeyUp();
+            }
+            
+            last_encoder_value = current_value;
+        }
+        break;
+        
+    case APP_FUNCTION:
+        // 功能页面状态下，根据当前页面执行不同功能
+        switch (current_function_id)
+        {
+        case FUNC_SERVO_ULTRA:
+            // 舵机页面，编码器用于控制舵机角度
+            if (Servo_lock == 0) // 只有在解锁状态下才能控制
+            {
+                Servo();
+            }
+            break;
+        }
+        break;
     }
 }
 

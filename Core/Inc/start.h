@@ -9,6 +9,23 @@
 #include <stdio.h>
 #include "tim.h"
 
+/* 应用状态枚举 */
+typedef enum
+{
+    APP_LOCKED,    // 锁定状态
+    APP_MENU,      // 主菜单状态
+    APP_FUNCTION   // 功能页面状态
+} AppState;
+
+/* 功能页面ID枚举 */
+typedef enum
+{
+    FUNC_WELCOME = 1,    // 欢迎与解锁
+    FUNC_SERVO_ULTRA,    // 舵机与超声波测距
+    FUNC_SENSOR,         // 传感器
+    FUNC_MPU6050         // MPU-6050数据
+} FunctionId;
+
 /* 变量声明 */
 extern char oled_buf[20];
 extern char oled_uart_buf[20];
@@ -19,13 +36,19 @@ extern uint8_t uart_flag;
 extern uint8_t blue_switch;
 extern uint32_t key_lasttime_0;
 extern uint32_t key_lasttime_1;
+extern uint32_t key_lasttime_2;
 extern uint8_t key_last_state_0;
 extern uint8_t key_last_state_1;
+extern uint8_t key_last_state_2;
 extern uint32_t Count;
 extern uint8_t oled_ui;
 extern uint8_t Servo_lock;
 extern uint32_t servo_last_count;
 extern uint8_t Lock;
+
+/* 应用状态变量 */
+extern AppState app_state;
+extern uint8_t current_function_id; // 当前功能页面ID
 
 /* 密码相关变量 */
 #define PASSWORD_LEN 4
@@ -51,5 +74,7 @@ void UART_Process(void);
 void Encoder(void);
 void Servo(void);
 void Sensor_Process(void);
+void Menu_System_Init(void);
+void MPU6050_System_Init(void);
 
 #endif

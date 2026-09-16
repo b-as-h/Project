@@ -1,7 +1,8 @@
 /**
  * @file    oled.h
  * @brief   SSD1306 OLED驱动头文件 (I2C接口, 128x64分辨率)
- * @note    适用于波特律动·keysking的STM32学习套件
+ * @author  BASH
+ * @note    适用于STM32F103系列微控制器
  * @note    使用流程:
  *          1. 初始化I2C后调用 OLED_Init() 初始化屏幕
  *          2. 调用 OLED_NewFrame() 清空显存, 开始绘制新一帧
@@ -191,7 +192,7 @@ void OLED_DrawEllipse(uint8_t x, uint8_t y, uint8_t a, uint8_t b, OLED_ColorMode
  * @param  x     起始点横坐标(左上角), 取值范围: 0 ~ 127
  * @param  y     起始点纵坐标(左上角), 取值范围: 0 ~ 63
  * @param  img   指向Image结构体的指针, 包含图片宽度、高度和数据
- *               - 使用波特律动LED取模工具生成: https://led.baud-dance.com
+ *               - 使用LED取模工具生成
  * @param  color 颜色模式
  *               - OLED_COLOR_NORMAL:  正常显示
  *               - OLED_COLOR_REVERSED: 反色显示
@@ -244,7 +245,7 @@ void OLED_PrintASCIIString(uint8_t x, uint8_t y, char *str, const ASCIIFont *fon
  *               - OLED_COLOR_REVERSED: 反色显示(白底黑字)
  * @note   为保证中文正常显示:
  *         1. 编译器字符集必须设置为UTF-8
- *         2. 中文字模需使用波特律动LED取模工具生成: https://led.baud-dance.com
+ *         2. 中文字模需使用LED取模工具生成
  * @note   字符从左到右依次绘制, 不会自动换行
  */
 void OLED_PrintString(uint8_t x, uint8_t y, char *str, const Font *font, OLED_ColorMode color);
