@@ -183,36 +183,21 @@ void Font_DrawChineseChar(int16_t x, int16_t y, const uint8_t *utf8_code)
     int idx = Font_FindChineseIndex(utf8_code);
     if (idx < 0) return;
 
-    const uint8_t *data = zh16x16[idx] + 3; /* 跳过 UTF-8 编码 */
+    const uint8_t *data = zh16x16[idx] + 4; /* 跳过四字节 UTF-8 头 */
 
-    /* 绘制左半部分（8列 x 16行） */
-    for (int col = 0; col < 8; col++) {
+    /* 取模格式与 OLED_SetBlock 一致：前 16 字节是上半页，
+     * 后 16 字节是下半页，每一列连续存放 16 个像素。 */
+    for (int col = 0; col < 16; col++) {
         uint8_t byte = data[col];
         for (int row = 0; row < 8; row++) {
             if (byte & (1 << row)) {
                 OLED_DrawPixel(x + col, y + row);
             }
         }
-        uint8_t byte2 = data[col + 8];
+        uint8_t byte2 = data[16 + col];
         for (int row = 0; row < 8; row++) {
             if (byte2 & (1 << row)) {
                 OLED_DrawPixel(x + col, y + row + 8);
-            }
-        }
-    }
-
-    /* 绘制右半部分（8列 x 16行） */
-    for (int col = 0; col < 8; col++) {
-        uint8_t byte = data[16 + col];
-        for (int row = 0; row < 8; row++) {
-            if (byte & (1 << row)) {
-                OLED_DrawPixel(x + 8 + col, y + row);
-            }
-        }
-        uint8_t byte2 = data[16 + col + 8];
-        for (int row = 0; row < 8; row++) {
-            if (byte2 & (1 << row)) {
-                OLED_DrawPixel(x + 8 + col, y + row + 8);
             }
         }
     }
@@ -250,4 +235,30 @@ void Font_DrawMixedString(int16_t x, int16_t y, const char *str)
             p++;
         }
     }
+}
+
+uint16_t Font_GetMixedStringWidth(const char *str)
+{
+    uint16_t width = 0U;
+    const uint8_t *p = (const uint8_t *)str;
+
+    while (*p) {
+        if (*p < 0x80U) {
+            width = (uint16_t)(width + 6U);
+            ++p;
+        } else if ((*p & 0xE0U) == 0xC0U) {
+            width = (uint16_t)(width + 16U);
+            p += 2;
+        } else if ((*p & 0xF0U) == 0xE0U) {
+            width = (uint16_t)(width + 16U);
+            p += 3;
+        } else if ((*p & 0xF8U) == 0xF0U) {
+            width = (uint16_t)(width + 16U);
+            p += 4;
+        } else {
+            width = (uint16_t)(width + 6U);
+            ++p;
+        }
+    }
+    return width;
 }

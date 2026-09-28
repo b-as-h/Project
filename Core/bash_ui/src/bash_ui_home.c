@@ -1,4 +1,5 @@
 #include "bash_ui_internal.h"
+#include "font_bash.h"
 
 #if UI_ENABLE_HOME
 
@@ -25,8 +26,7 @@ static int32_t ui_home_label_width_q8(const UI_HomePage *page,
                                          uint16_t selected)
 {
     int32_t width;
-    OLED_SetFont(ui_state.app->fonts.home_font);
-    width = (int32_t)OLED_GetUTF8Width(page->items[selected].label) + 12;
+    width = (int32_t)Font_GetMixedStringWidth(page->items[selected].label) + 12;
     if (width > 120) {
         width = 120;
     }
@@ -39,9 +39,8 @@ static int16_t ui_home_text_spacing(const UI_HomePage *page)
     uint16_t maximum = 0U;
     uint16_t i;
 
-    OLED_SetFont(ui_state.app->fonts.home_font);
     for (i = 0U; i < page->item_count; ++i) {
-        uint16_t width = (uint16_t)(OLED_GetUTF8Width(page->items[i].label) + 12U);
+        uint16_t width = (uint16_t)(Font_GetMixedStringWidth(page->items[i].label) + 12U);
         if (width > maximum) {
             maximum = width;
         }
@@ -139,7 +138,6 @@ void UI_HomeDraw(const UI_PageState *state, int16_t x_offset,
     int16_t clip_right = (int16_t)(clip_x + clip_width);
 
     OLED_SetClipWindow(clip_x, 0, clip_width, UI_SCREEN_HEIGHT);
-    OLED_SetFont(ui_state.app->fonts.home_font);
     if (state == &ui_state.current && ui_state.home_anim.active != 0U) {
         uint16_t p = UI_EaseQ12(ui_state.last_update - ui_state.home_anim.started,
                                    UI_HOME_MS);
@@ -175,9 +173,9 @@ void UI_HomeDraw(const UI_PageState *state, int16_t x_offset,
                 int16_t delta = ui_home_delta(i, state->selected,
                                                  page->item_count);
                 int16_t text_x = (int16_t)((UI_SCREEN_WIDTH -
-                    (int16_t)OLED_GetUTF8Width(page->items[i].label)) / 2 +
+                    (int16_t)Font_GetMixedStringWidth(page->items[i].label)) / 2 +
                     delta * text_spacing + text_offset + x_offset);
-                OLED_DrawUTF8(text_x, 46, page->items[i].label);
+                Font_DrawMixedString(text_x, 46, page->items[i].label);
             }
             OLED_SetDrawMode(OLED_DRAW_XOR);
             OLED_DrawRBox(label_left, 44, (uint16_t)label_width, 20U, 3U);

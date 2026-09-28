@@ -567,10 +567,15 @@ static void ui_process_input(uint32_t now, UI_Input input)
                 key->stable = key->candidate;
                 if (key->stable == 0U) {
                     key->armed = 1U;
-                    release |= (uint8_t)(1U << i);
+                    /* A long-press repeat already consumed this OK press. */
+                    if (i != 2U || key->repeat_sent == 0U) {
+                        release |= (uint8_t)(1U << i);
+                    }
+                    key->repeat_sent = 0U;
                 } else if (key->armed != 0U) {
                     key->pressed_at = now;
                     key->repeat_at = now + ui_initial_repeat_delay(i);
+                    key->repeat_sent = 0U;
                     press |= (uint8_t)(1U << i);
                 }
             }
@@ -578,6 +583,9 @@ static void ui_process_input(uint32_t now, UI_Input input)
                 key->armed != 0U &&
                 (int32_t)(now - key->repeat_at) >= 0) {
                 repeat |= (uint8_t)(1U << i);
+                if (i == 2U) {
+                    key->repeat_sent = 1U;
+                }
                 key->repeat_at = now +
                     ui_repeat_interval(now - key->pressed_at);
             }

@@ -18,11 +18,11 @@ extern "C" {
 /** 6x10 像素 ASCII 字体（u8g2 格式，用于菜单和页面文字）。 */
 extern const uint8_t font_6x10[];
 
-/** 中文 16x16 字体数据（每字符 36 字节：3字节UTF-8 + 32字节位图）。 */
+/** 中文 16x16 字体数据（每字符 36 字节：4字节UTF-8头 + 32字节位图）。 */
 extern const uint8_t zh16x16[][36];
 
 /** 中文字符数量 */
-#define ZH16x16_COUNT 27
+#define ZH16x16_COUNT 24
 
 /**
  * @brief 绘制单个 ASCII 字符（6x8 位图）
@@ -47,6 +47,9 @@ void Font_DrawChineseChar(int16_t x, int16_t y, const uint8_t *utf8_code);
  * @param str UTF-8 编码的字符串
  */
 void Font_DrawMixedString(int16_t x, int16_t y, const char *str);
+
+/** 获取混合字符串在当前字体下的显示宽度。 */
+uint16_t Font_GetMixedStringWidth(const char *str);
 
 #ifdef __cplusplus
 }

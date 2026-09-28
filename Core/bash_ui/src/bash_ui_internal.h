@@ -42,6 +42,7 @@ typedef struct {
     uint8_t candidate;
     uint8_t stable;
     uint8_t armed;
+    uint8_t repeat_sent;
 } UI_KeyState;
 
 typedef struct {
