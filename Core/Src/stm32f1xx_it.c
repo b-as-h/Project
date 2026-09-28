@@ -229,4 +229,21 @@ void USART1_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
+/* I2C 回调转发给 bash_oled 驱动（用于异步刷新模式） */
+#include "bash_oled_driver.h"
+
+void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+    if (hi2c->Instance == I2C1) {
+        OLED_DriverHandleMemTxComplete();
+    }
+}
+
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
+{
+    if (hi2c->Instance == I2C1) {
+        OLED_DriverHandleError();
+    }
+}
+
 /* USER CODE END 1 */

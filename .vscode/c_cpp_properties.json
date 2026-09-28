@@ -6,17 +6,29 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/Core/Inc",
                 "${workspaceFolder}/Drivers/STM32F1xx_HAL_Driver/Inc",
+                "${workspaceFolder}/Drivers/STM32F1xx_HAL_Driver/Inc/Legacy",
                 "${workspaceFolder}/Drivers/CMSIS/Include",
-                "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F1xx/Include"
+                "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F1xx/Include",
+                "${workspaceFolder}/Core/bash_oled/include",
+                "${workspaceFolder}/Core/bash_oled/graphics",
+                "${workspaceFolder}/Core/bash_oled/driver",
+                "${workspaceFolder}/Core/bash_ui/include",
+                "${workspaceFolder}/Core/bash_ui/src",
+                "C:/Users/bash/AppData/Local/Keil_v5/ARM/ARMCLANG/include",
+                "C:/Users/bash/AppData/Local/Keil_v5/ARM/ARMCLANG/include/libcxx",
+                "C:/Users/bash/AppData/Local/Keil_v5/ARM/INC"
             ],
             "defines": [
                 "STM32F103xB",
-                "USE_HAL_DRIVER"
+                "USE_HAL_DRIVER",
+                "__CC_ARM",
+                "ARM_MATH_CM3",
+                "__GNUC__"
             ],
-            "compilerPath": "C:/ST/STM32CubeCLT_1.18.0/GNU-tools-for-STM32/bin/arm-none-eabi-gcc.exe",
+            "compilerPath": "C:/Users/bash/AppData/Local/Keil_v5/ARM/ARMCLANG/bin/armclang.exe",
             "cStandard": "c17",
             "cppStandard": "gnu++17",
-            "intelliSenseMode": "windows-gcc-arm"
+            "intelliSenseMode": "windows-clang-arm"
         }
     ],
     "version": 4

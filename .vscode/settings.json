@@ -1,4 +1,5 @@
 {
+    "KeilAssistant.MDK.Uv4Path": "C:\\Users\\bash\\AppData\\Local\\Keil_v5\\UV4\\UV4.exe",
     "files.watcherExclude": {
         "**/build/**": true,
         "**/MDK-ARM/Listings/**": true,

@@ -4,7 +4,7 @@
         {
             "label": "Keil Build & Download",
             "type": "shell",
-            "command": "C:/Keil_MDK/core/UV4/UV4.exe",
+            "command": "C:/Users/bash/AppData/Local/Keil_v5/UV4/UV4.exe",
             "args": [
                 "-r",
                 "-d",
@@ -32,7 +32,7 @@
         {
             "label": "Keil Build Only",
             "type": "shell",
-            "command": "C:/Keil_MDK/core/UV4/UV4.exe",
+            "command": "C:/Users/bash/AppData/Local/Keil_v5/UV4/UV4.exe",
             "args": [
                 "-r",
                 "-j0",
@@ -55,7 +55,7 @@
         {
             "label": "Keil Download Only",
             "type": "shell",
-            "command": "C:/Keil_MDK/core/UV4/UV4.exe",
+            "command": "C:/Users/bash/AppData/Local/Keil_v5/UV4/UV4.exe",
             "args": [
                 "-d",
                 "-o", "${workspaceFolder}/download_log.txt",
