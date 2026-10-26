@@ -18,8 +18,10 @@
 #include "main.h"
 #include "start.h"
 #include "mpu6050.h"
+#include "fmt.h"
+#include "sys_info.h"
+#include "bt.h"
 #include <string.h>
-#include <stdio.h>
 
 /* ========== 占位图标 (32x32 XBM, 128 bytes each) ========== */
 
@@ -407,6 +409,26 @@ static const uint8_t icon_mpu[128] = {
     0x00,
 };
 
+/* 系统信息图标：圆圈 + 字母 i */
+static const uint8_t icon_sysinfo[128] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x0F, 0x00,
+    0x00, 0xFC, 0x3F, 0x00, 0x00, 0x0F, 0xF0, 0x00,
+    0x80, 0x03, 0xC0, 0x01, 0xC0, 0xC1, 0x83, 0x03,
+    0xE0, 0xC0, 0x03, 0x07, 0x60, 0xC0, 0x03, 0x06,
+    0x30, 0xC0, 0x03, 0x0C, 0x30, 0x00, 0x00, 0x0C,
+    0x18, 0x00, 0x00, 0x18, 0x18, 0xC0, 0x03, 0x18,
+    0x18, 0xC0, 0x03, 0x18, 0x18, 0xC0, 0x03, 0x18,
+    0x18, 0xC0, 0x03, 0x18, 0x18, 0xC0, 0x03, 0x18,
+    0x18, 0xC0, 0x03, 0x18, 0x18, 0xC0, 0x03, 0x18,
+    0x30, 0xC0, 0x03, 0x0C, 0x30, 0xC0, 0x03, 0x0C,
+    0x60, 0xC0, 0x03, 0x06, 0xE0, 0xC0, 0x03, 0x07,
+    0xC0, 0x01, 0x80, 0x03, 0x80, 0x03, 0xC0, 0x01,
+    0x00, 0x0F, 0xF0, 0x00, 0x00, 0xFC, 0x3F, 0x00,
+    0x00, 0xF0, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
 /* ========== 密码系统变量 ========== */
 typedef enum
 {
@@ -436,32 +458,21 @@ static uint32_t lock_last_tick = 0;
 static uint32_t sensor_last_tick = 0;
 static uint32_t servo_last_tick = 0;
 static uint32_t mpu_last_tick = 0;
+/* MPU 页两个视图：0=数据，1=寄存器诊断 */
+#define MPU_VIEW_COUNT 2U
+static uint8_t mpu_view = 0;
+static uint32_t sys_last_tick = 0;
 
-/* Sensor values are sampled on the page tick, never from the draw callback. */
-static uint8_t sensor_light_state = 0;
-static uint16_t sensor_light_percent = 0;
-static float sensor_vdda = 0.0f;
-static int8_t sensor_chip_temp = 0;
+/* 系统信息页：3 个子视图，编码器切换 */
+#define SYSINFO_VIEW_COUNT 3U
+static uint8_t sys_view = 0;
 
-static void App_UI_UpdateSensorData(void)
+static const char *App_UITestText(Sys_TestResult result)
 {
-    uint32_t light_adc = Read_ADC_Channel(ADC_CHANNEL_9);
-    uint32_t temp_adc = Read_ADC_Channel(ADC_CHANNEL_TEMPSENSOR);
-    uint32_t vref_adc = Read_ADC_Channel(ADC_CHANNEL_VREFINT);
-
-    sensor_light_state = (HAL_GPIO_ReadPin(Light_do_GPIO_Port, Light_do_Pin) !=
-                          GPIO_PIN_RESET)
-                             ? 1U
-                             : 0U;
-    sensor_light_percent = (uint16_t)((4095U - light_adc) * 100U / 4095U);
-
-    if (vref_adc != 0U)
-    {
-        sensor_vdda = 1.20f * 4095.0f / (float)vref_adc;
-        {
-            float vsense = (float)temp_adc * sensor_vdda / 4095.0f;
-            sensor_chip_temp = (int8_t)((vsense - 1.43f) / 0.0043f + 25.0f);
-        }
+    switch (result) {
+    case SYS_TEST_PASS: return "OK";
+    case SYS_TEST_FAIL: return "FAIL";
+    default:            return "--";
     }
 }
 
@@ -470,6 +481,7 @@ static const UI_HomeItem home_items[] = {
     {"Sensor", icon_sensor, APP_PAGE_SENSOR},
     {"Servo", icon_servo, APP_PAGE_SERVO},
     {"MPU6050", icon_mpu, APP_PAGE_MPU6050},
+    {"System", icon_sysinfo, APP_PAGE_SYSINFO},
 };
 static const UI_HomePage home_pages[] = {
     {home_items, sizeof(home_items) / sizeof(home_items[0])},
@@ -482,16 +494,7 @@ static const UI_PageRoute routes[] = {
     {UI_PAGE_CUSTOM, 1}, /* page 3: 传感器（自定义） */
     {UI_PAGE_CUSTOM, 2}, /* page 4: 舵机（自定义） */
     {UI_PAGE_CUSTOM, 3}, /* page 5: MPU6050（自定义） */
-};
-
-/* ========== 文案 ========== */
-static const UI_Texts texts = {
-    .return_text = "<Back",
-    .cancel_text = "Cancel",
-    .confirm_text = "OK",
-    .on_text = "ON",
-    .off_text = "OFF",
-    .message_title = "Info",
+    {UI_PAGE_CUSTOM, 4}, /* page 6: 系统信息（自定义） */
 };
 
 /* ========== 应用描述（非 const，以便动态修改 root_page） ========== */
@@ -501,23 +504,7 @@ static UI_App app_desc = {
     .route_count = sizeof(routes) / sizeof(routes[0]),
     .home_pages = home_pages,
     .home_page_count = sizeof(home_pages) / sizeof(home_pages[0]),
-    .menu_pages = NULL,
-    .menu_page_count = 0,
-    .info_pages = NULL,
-    .info_page_count = 0,
-    .custom_page_count = 4, /* 锁屏、传感器、舵机、MPU6050 */
-    .int_bindings = NULL,
-    .int_binding_count = 0,
-    .bool_bindings = NULL,
-    .bool_binding_count = 0,
-    .confirm_descs = NULL,
-    .confirm_desc_count = 0,
-    .fonts = {
-        .home_font = font_6x10,
-        .title_font = font_6x10,
-        .body_font = font_6x10,
-    },
-    .texts = texts,
+    .custom_page_count = 5, /* 锁屏、传感器、舵机、MPU6050、系统信息 */
 };
 
 /* ========== 密码验证 ========== */
@@ -535,7 +522,6 @@ static uint8_t Password_Verify(void)
 
 /* ========== BASH_UI 回调实现 ========== */
 
-#if UI_ENABLE_CUSTOM
 void UI_CustomOnEnter(UI_PageId page)
 {
     switch (page)
@@ -565,6 +551,14 @@ void UI_CustomOnEnter(UI_PageId page)
 
     case APP_PAGE_MPU6050:
         mpu_last_tick = 0;
+        mpu_view = 0;
+        break;
+
+    case APP_PAGE_SYSINFO:
+        sys_view = 0;
+        sys_last_tick = 0;
+        /* 进入页面时做一次 I2C 在位检测（阻塞约 20ms，仅此一次） */
+        SysInfo_SelfTest();
         break;
 
     default:
@@ -696,11 +690,47 @@ void UI_CustomOnInput(UI_PageId page, UI_InputEvent event)
         break;
 
     case APP_PAGE_SENSOR:
-    case APP_PAGE_MPU6050:
         /* OK键返回首页 */
         if (event.action == UI_INPUT_OK && event.source == UI_INPUT_PRESS)
         {
             UI_CustomRequestClose();
+        }
+        break;
+
+    case APP_PAGE_MPU6050:
+        /* OK 返回首页；编码器在"数据 / 寄存器"两个视图间切换 */
+        if (event.action == UI_INPUT_OK && event.source == UI_INPUT_PRESS)
+        {
+            UI_CustomRequestClose();
+            break;
+        }
+        /* 编码器切换视图：往下拨看寄存器，往上拨回数据。
+         * 按方向直接赋值，不累加 steps，避免一格跳两次。 */
+        if (event.source == UI_INPUT_ENCODER)
+        {
+            mpu_view = (event.action == UI_INPUT_DOWN) ? 1U : 0U;
+            UI_Invalidate();
+        }
+        break;
+
+    case APP_PAGE_SYSINFO:
+        /* OK 返回首页；编码器切换 3 个子视图 */
+        if (event.action == UI_INPUT_OK && event.source == UI_INPUT_PRESS)
+        {
+            UI_CustomRequestClose();
+            break;
+        }
+        if (event.source == UI_INPUT_ENCODER)
+        {
+            int16_t delta = (event.action == UI_INPUT_DOWN) ? (int16_t)event.steps
+                                                            : -(int16_t)event.steps;
+            int16_t view = (int16_t)sys_view + delta;
+            while (view < 0)
+                view += (int16_t)SYSINFO_VIEW_COUNT;
+            while (view >= (int16_t)SYSINFO_VIEW_COUNT)
+                view -= (int16_t)SYSINFO_VIEW_COUNT;
+            sys_view = (uint8_t)view;
+            UI_Invalidate();
         }
         break;
 
@@ -723,11 +753,10 @@ bool UI_CustomOnTick(UI_PageId page, uint32_t now_ms)
         return false;
 
     case APP_PAGE_SENSOR:
-        /* 传感器页每 200ms 刷新 */
+        /* 传感器页每 200ms 刷新（数据由 Sensor_Process 周期采样） */
         if (now_ms - sensor_last_tick >= 200)
         {
             sensor_last_tick = now_ms;
-            App_UI_UpdateSensorData();
             return true;
         }
         return false;
@@ -750,6 +779,15 @@ bool UI_CustomOnTick(UI_PageId page, uint32_t now_ms)
         }
         return false;
 
+    case APP_PAGE_SYSINFO:
+        /* 系统信息页每 500ms 刷新 */
+        if (now_ms - sys_last_tick >= 500)
+        {
+            sys_last_tick = now_ms;
+            return true;
+        }
+        return false;
+
     default:
         return false;
     }
@@ -761,7 +799,8 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
     (void)clip_x;
     (void)clip_width;
 
-    char buf[32];
+    char buf[40];
+    char *p;
 
     switch (page)
     {
@@ -778,7 +817,10 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
         if (lock_state == LOCK_IDLE)
         {
             Font_DrawMixedString(x_offset + 2, 18, "Press OK");
-            sprintf(buf, "Err:%d/%d", error_count, MAX_ERROR_COUNT);
+            p = Fmt_Str(buf, "Err:");
+            p = Fmt_I32(p, error_count);
+            *p++ = '/';
+            p = Fmt_I32(p, MAX_ERROR_COUNT);
             Font_DrawMixedString(x_offset + 2, 38, buf);
         }
         else if (lock_state == LOCK_INPUT)
@@ -789,7 +831,8 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
                 stars[i] = '*';
             stars[input_index] = '\0';
             Font_DrawMixedString(x_offset + 30, 16, stars);
-            sprintf(buf, "Num:%d", select_num);
+            p = Fmt_Str(buf, "Num:");
+            p = Fmt_I32(p, select_num);
             Font_DrawMixedString(x_offset + 2, 32, buf);
             Font_DrawMixedString(x_offset + 2, 48, "[OK]Confirm");
         }
@@ -819,35 +862,39 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
         }
 
         /* 光照强度 */
-        sprintf(buf, "L:%d%%", sensor_light_percent);
+        p = Fmt_Str(buf, "L:");
+        p = Fmt_U32(p, sensor_light_percent);
+        p = Fmt_Str(p, "%");
         Font_DrawMixedString(x_offset + 2, 18, buf);
 
         /* DS18B20 温度 + DHT11 湿度 */
-        if (ds18b20_valid && dht11_data.valid)
+        p = Fmt_Str(buf, "T:");
+        if (ds18b20_valid)
         {
-            int16_t t = ds18b20_temp;
-            sprintf(buf, "T:%d.%02dC H:%d%%",
-                    t / 100, (t > 0 ? t : -t) % 100,
-                    dht11_data.humi);
-        }
-        else if (ds18b20_valid)
-        {
-            int16_t t = ds18b20_temp;
-            sprintf(buf, "T:%d.%02dC H:--%%",
-                    t / 100, (t > 0 ? t : -t) % 100);
-        }
-        else if (dht11_data.valid)
-        {
-            sprintf(buf, "T:--.--C H:%d%%", dht11_data.humi);
+            p = Fmt_Fixed(p, ds18b20_temp, 2);
         }
         else
         {
-            sprintf(buf, "T:--.--C H:--%%");
+            p = Fmt_Str(p, "--.--");
         }
+        p = Fmt_Str(p, "C H:");
+        if (dht11_data.valid)
+        {
+            p = Fmt_U32(p, dht11_data.humi);
+        }
+        else
+        {
+            p = Fmt_Str(p, "--");
+        }
+        p = Fmt_Str(p, "%");
         Font_DrawMixedString(x_offset + 2, 28, buf);
 
         /* 片内温度 + VDDA 电压 */
-        sprintf(buf, "C:%dC V:%.2fV", sensor_chip_temp, (double)sensor_vdda);
+        p = Fmt_Str(buf, "C:");
+        p = Fmt_Fixed(p, sensor_chip_temp_x10, 1);
+        p = Fmt_Str(p, "C V:");
+        p = Fmt_U32(p, sensor_vdd_mv);
+        p = Fmt_Str(p, "mV");
         Font_DrawMixedString(x_offset + 2, 42, buf);
 
         /* 返回提示 */
@@ -876,7 +923,8 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
         if (count > 20)
             count = 20;
         int angle = (int)(count * 180 / 20);
-        sprintf(buf, "Angle: %d", angle);
+        p = Fmt_Str(buf, "Angle: ");
+        p = Fmt_I32(p, angle);
         Font_DrawMixedString(x_offset + 2, 20, buf);
 
         /* 操作提示 */
@@ -895,37 +943,208 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
         /* MPU6050页绘制 */
         OLED_SetDrawMode(OLED_DRAW_SET);
 
-        /* 标题 */
-        Font_DrawMixedString(x_offset + 2, 0, "MPU6050");
+        /* 标题 + 视图序号 */
+        p = Fmt_Str(buf, "MPU6050 ");
+        p = Fmt_U32(p, (uint32_t)mpu_view + 1U);
+        *p++ = '/';
+        p = Fmt_U32(p, MPU_VIEW_COUNT);
+        Font_DrawMixedString(x_offset + 2, 0, buf);
 
-        if (!mpu6050_initialized)
+        if (mpu_view == 1U)
         {
-            Font_DrawMixedString(x_offset + 2, 18, "初始失败");
-            Font_DrawMixedString(x_offset + 2, 38, "[OK]Back");
+            /* 视图 2：寄存器诊断。用来判断"能读不能采"到底卡在哪一环。 */
+            if (!mpu6050_initialized)
+            {
+                Font_DrawMixedString(x_offset + 2, 24, "Not init");
+                Font_DrawMixedString(x_offset + 2, 54, "[OK]Back");
+                break;
+            }
+
+            p = Fmt_Str(buf, "W1:");
+            p = Fmt_Hex8(p, mpu6050_pwr_mgmt);
+            p = Fmt_Str(p, " W2:");
+            p = Fmt_Hex8(p, mpu6050_pwr_mgmt2);
+            Font_DrawMixedString(x_offset + 2, 11, buf);
+
+            p = Fmt_Str(buf, "AC:");
+            p = Fmt_Hex8(p, mpu6050_accel_config);
+            p = Fmt_Str(p, " GC:");
+            p = Fmt_Hex8(p, mpu6050_gyro_config);
+            Font_DrawMixedString(x_offset + 2, 22, buf);
+
+            p = Fmt_Str(buf, "AX:");
+            p = Fmt_I32(p, (int32_t)mpu6050_data.Accel_X_RAW);
+            p = Fmt_Str(p, " AY:");
+            p = Fmt_I32(p, (int32_t)mpu6050_data.Accel_Y_RAW);
+            Font_DrawMixedString(x_offset + 2, 33, buf);
+
+            p = Fmt_Str(buf, "AZ:");
+            p = Fmt_I32(p, (int32_t)mpu6050_data.Accel_Z_RAW);
+            p = Fmt_Str(p, " E:");
+            p = Fmt_U32(p, mpu6050_read_errors > 9999U ? 9999U : mpu6050_read_errors);
+            Font_DrawMixedString(x_offset + 2, 44, buf);
+
+            Font_DrawMixedString(x_offset + 2, 54, "[ENC] [OK]Back");
             break;
         }
 
-        /* 加速度 */
-        sprintf(buf, "A:%.1f,%.1f,%.1f", mpu6050_data.Ax, mpu6050_data.Ay, mpu6050_data.Az);
-        Font_DrawMixedString(x_offset + 2, 14, buf);
+        /* 诊断行：WHO_AM_I 回读值 + 初始化结果。
+         * 无论成功还是失败这一行都有内容，页面不会再是空白一片。 */
+        p = Fmt_Str(buf, "ID:");
+        if (mpu6050_who_am_i == 0U)
+        {
+            p = Fmt_Str(p, "--");
+        }
+        else
+        {
+            p = Fmt_Hex8(p, mpu6050_who_am_i);
+        }
+        *p++ = ' ';
+        switch (mpu6050_init_status)
+        {
+        case MPU6050_OK:        p = Fmt_Str(p, "OK");     break;
+        case MPU6050_ERR_I2C:   p = Fmt_Str(p, "NOACK");  break;
+        case MPU6050_ERR_ID:    p = Fmt_Str(p, "BADID");  break;
+        case MPU6050_ERR_SLEEP: p = Fmt_Str(p, "SLEEP");  break;
+        default:                p = Fmt_Str(p, "CFGERR"); break;
+        }
+        Font_DrawMixedString(x_offset + 2, 11, buf);
 
-        /* 陀螺仪 */
-        sprintf(buf, "G:%.1f,%.1f,%.1f", mpu6050_data.Gx, mpu6050_data.Gy, mpu6050_data.Gz);
-        Font_DrawMixedString(x_offset + 2, 28, buf);
+        if (!mpu6050_initialized)
+        {
+            Font_DrawMixedString(x_offset + 2, 26, "No data");
+            Font_DrawMixedString(x_offset + 2, 54, "[OK]Back");
+            break;
+        }
 
-        /* 温度 */
-        sprintf(buf, "T:%.1fC", mpu6050_data.Temperature);
-        Font_DrawMixedString(x_offset + 2, 42, buf);
+        /* 加速度（单位 g，保留两位小数）。
+         * Fmt_Fixed 的参数是"已放大 10^decimals 倍的整数"，
+         * 2 位小数要 ×100，之前写的 ×1000 会把数值放大 10 倍。 */
+        p = Fmt_Str(buf, "A:");
+        p = Fmt_Fixed(p, (int32_t)(mpu6050_data.Ax * 100.0f), 2);
+        *p++ = ',';
+        p = Fmt_Fixed(p, (int32_t)(mpu6050_data.Ay * 100.0f), 2);
+        *p++ = ',';
+        p = Fmt_Fixed(p, (int32_t)(mpu6050_data.Az * 100.0f), 2);
+        Font_DrawMixedString(x_offset + 2, 22, buf);
+
+        /* 陀螺仪（单位 °/s，取整） */
+        p = Fmt_Str(buf, "G:");
+        p = Fmt_I32(p, (int32_t)mpu6050_data.Gx);
+        *p++ = ',';
+        p = Fmt_I32(p, (int32_t)mpu6050_data.Gy);
+        *p++ = ',';
+        p = Fmt_I32(p, (int32_t)mpu6050_data.Gz);
+        Font_DrawMixedString(x_offset + 2, 33, buf);
+
+        /* 温度 + 采样失败计数 + PWR_MGMT_1 回读值
+         * P 正常应为 01（PLL 时钟、已唤醒）；40 表示还停在 SLEEP。 */
+        p = Fmt_Str(buf, "T:");
+        p = Fmt_Fixed(p, (int32_t)(mpu6050_data.Temperature * 10.0f), 1);
+        p = Fmt_Str(p, "C E:");
+        p = Fmt_U32(p, mpu6050_read_errors > 9999U ? 9999U : mpu6050_read_errors);
+        p = Fmt_Str(p, " P:");
+        p = Fmt_Hex8(p, mpu6050_pwr_mgmt);
+        Font_DrawMixedString(x_offset + 2, 44, buf);
 
         /* 返回提示 */
         Font_DrawMixedString(x_offset + 2, 54, "[OK]Back");
+        break;
+
+    case APP_PAGE_SYSINFO:
+        /* 系统信息：3 个子视图，编码器切换 */
+        OLED_SetDrawMode(OLED_DRAW_SET);
+
+        p = Fmt_Str(buf, (sys_view == 0U) ? "SYS "
+                                          : ((sys_view == 1U) ? "RES " : "TEST "));
+        p = Fmt_U32(p, (uint32_t)sys_view + 1U);
+        *p++ = '/';
+        p = Fmt_U32(p, SYSINFO_VIEW_COUNT);
+        Font_DrawMixedString(x_offset + 2, 0, buf);
+        OLED_DrawHLine(x_offset + 2, 12, 124);
+
+        if (sys_view == 0U)
+        {
+            /* 视图 1：复位原因 / 运行时间 / 版本 / 蓝牙 */
+            p = Fmt_Str(buf, "RST: ");
+            p = Fmt_Str(p, SysInfo_ResetCauseText());
+            Font_DrawMixedString(x_offset + 2, 14, buf);
+
+            p = Fmt_Str(buf, "UP : ");
+            p = Fmt_TimeHMS(p, SysInfo_UptimeSeconds());
+            Font_DrawMixedString(x_offset + 2, 24, buf);
+
+            p = Fmt_Str(buf, "VER: ");
+            p = Fmt_Str(p, "1.4.0");
+            Font_DrawMixedString(x_offset + 2, 34, buf);
+
+            p = Fmt_Str(buf, "BT :");
+            p = Fmt_U32(p, BT_GetBaud());
+            p = Fmt_Str(p, BT_IsOnline() ? " ON" : " OFF");
+            Font_DrawMixedString(x_offset + 2, 44, buf);
+
+            Font_DrawMixedString(x_offset + 2, 54, "[ENC]Page [OK]Back");
+        }
+        else if (sys_view == 1U)
+        {
+            /* 视图 2：Flash / RAM / 栈 / 主循环负载 */
+            p = Fmt_Str(buf, "FLASH:");
+            p = Fmt_Size(p, sys_info.flash_used);
+            *p++ = '/';
+            p = Fmt_Size(p, sys_info.flash_total);
+            Font_DrawMixedString(x_offset + 2, 14, buf);
+
+            p = Fmt_Str(buf, "RAM  :");
+            p = Fmt_Size(p, sys_info.ram_static);
+            *p++ = '/';
+            p = Fmt_Size(p, sys_info.ram_total);
+            Font_DrawMixedString(x_offset + 2, 24, buf);
+
+            p = Fmt_Str(buf, "STACK:");
+            p = Fmt_U32(p, sys_info.stack_peak);
+            *p++ = '/';
+            p = Fmt_U32(p, sys_info.stack_total);
+            Font_DrawMixedString(x_offset + 2, 34, buf);
+
+            p = Fmt_Str(buf, "LOOP :");
+            p = Fmt_U32(p, sys_info.loop_hz);
+            p = Fmt_Str(p, "/s");
+            Font_DrawMixedString(x_offset + 2, 44, buf);
+
+            p = Fmt_Str(buf, "LMAX :");
+            p = Fmt_U32(p, sys_info.loop_max_ms);
+            p = Fmt_Str(p, "ms");
+            Font_DrawMixedString(x_offset + 2, 54, buf);
+        }
+        else
+        {
+            /* 视图 3：外设自检结果 */
+            p = Fmt_Str(buf, "OLED: ");
+            p = Fmt_Str(p, App_UITestText(sys_info.oled));
+            Font_DrawMixedString(x_offset + 2, 14, buf);
+
+            p = Fmt_Str(buf, "MPU : ");
+            p = Fmt_Str(p, App_UITestText(sys_info.mpu));
+            Font_DrawMixedString(x_offset + 2, 24, buf);
+
+            p = Fmt_Str(buf, "DS18: ");
+            p = Fmt_Str(p, App_UITestText(sys_info.ds18b20));
+            Font_DrawMixedString(x_offset + 2, 34, buf);
+
+            p = Fmt_Str(buf, "DHT : ");
+            p = Fmt_Str(p, App_UITestText(sys_info.dht11));
+            Font_DrawMixedString(x_offset + 2, 44, buf);
+
+            p = Fmt_Str(buf, "BT  : ");
+            p = Fmt_Str(p, App_UITestText(sys_info.bluetooth));
+            Font_DrawMixedString(x_offset + 2, 54, buf);
+        }
         break;
 
     default:
         break;
     }
 }
-#endif
 
 /* ========== 公共接口 ========== */
 
@@ -948,6 +1167,9 @@ UI_Status App_UI_Init(void)
 
 void App_UI_Process(void)
 {
+    static uint32_t recover_last_tick = 0;
+    UI_Status status;
+
     /* 检查解锁待处理标志 */
     if (unlock_pending)
     {
@@ -958,7 +1180,23 @@ void App_UI_Process(void)
     }
 
     UI_Input input = Input_Read();
-    UI_Update(HAL_GetTick(), input);
+    status = UI_Update(HAL_GetTick(), input);
+
+    /*
+     * BASH_UI 在显示通路出错（或一帧超过 UI_DISPLAY_TIMEOUT_MS）时会把
+     * display_fault 锁存住并永久停止重绘，而框架自己不会解锁。
+     * 这里必须主动恢复，否则一次偶发错误就等于整块屏幕"卡死"。
+     * 限速 500ms 一次，避免真的坏掉时反复冲击总线。
+     */
+    if (status == UI_DISPLAY_ERROR || status == UI_DISPLAY_TIMEOUT)
+    {
+        uint32_t now = HAL_GetTick();
+        if (now - recover_last_tick >= 500U)
+        {
+            recover_last_tick = now;
+            UI_RecoverDisplay();
+        }
+    }
 }
 
 void App_UI_HandleEvents(void)

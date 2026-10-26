@@ -15,6 +15,8 @@
 /* MPU6050 */
 MPU6050_t mpu6050_data;
 uint8_t mpu6050_initialized = 0;
+uint8_t mpu6050_init_status = MPU6050_ERR_I2C;
+uint32_t mpu6050_read_errors = 0;
 
 /* 舵机 */
 uint8_t Servo_lock = 0;
@@ -31,11 +33,25 @@ static uint32_t ds18b20_conversion_started = 0;
 static uint8_t ds18b20_conversion_pending = 0;
 
 /* MPU6050 */
-static uint32_t mpu6050_lasttime = 0;
+static uint32_t mpu6050_next_sample = 0;
+static uint32_t mpu6050_retry_lasttime = 0;
+static uint8_t mpu6050_retry_count = 0;
+static uint8_t mpu6050_fail_count = 0;
+
+/* 光照与片内温度/电压 */
+uint16_t sensor_light_percent = 0;
+uint8_t sensor_light_state = 0;
+int16_t sensor_chip_temp_x10 = 0;
+uint16_t sensor_vdd_mv = 0;
+static uint32_t env_lasttime = 0;
 
 #define SENSOR_READ_INTERVAL_MS 2000U
+#define ENV_SAMPLE_INTERVAL_MS 200U
 #define DS18B20_CONVERSION_TIME_MS 750U
 #define MPU6050_SAMPLE_INTERVAL_MS 100U
+#define MPU6050_RETRY_INTERVAL_MS 2000U  /* 初始化失败后的快速重试周期 */
+#define MPU6050_RETRY_SLOW_MS 30000U     /* 连续失败多次后改成慢速重试 */
+#define MPU6050_RETRY_MS 10U             /* 单次采样失败后的最小重试间隔 */
 
 /* 编码器计数（舵机控制用） */
 static uint32_t Count = 0;
@@ -264,9 +280,45 @@ uint32_t Read_ADC_Channel(uint32_t channel)
 /* ========== MPU6050 初始化 ========== */
 void MPU6050_System_Init(void)
 {
-    if (MPU6050_Init(&hi2c1) == 0) {
-        mpu6050_initialized = 1;
-        mpu6050_lasttime = HAL_GetTick();
+    uint8_t status = MPU6050_Init(&hi2c1);
+
+    mpu6050_init_status = status;
+    mpu6050_initialized = (status == MPU6050_OK) ? 1U : 0U;
+
+    if (mpu6050_initialized) {
+        mpu6050_read_errors = 0;
+        mpu6050_retry_count = 0;
+        mpu6050_fail_count = 0;
+        mpu6050_next_sample = HAL_GetTick() + MPU6050_SAMPLE_INTERVAL_MS;
+    }
+}
+
+/* ========== 光照 / 片内温度 / 供电电压 ========== */
+
+/*
+ * 全部使用整数运算：
+ *   VDD(mV) = 1.20V * 4095 / VREFINT_ADC
+ *   片内温度(×10) = ((Vsense(mV) - 1430) * 100) / 43 + 250
+ * 这样整个工程不需要链接浮点 printf，节省约 3KB Flash。
+ */
+static void Sensor_UpdateEnv(void)
+{
+    uint32_t light_adc = Read_ADC_Channel(ADC_CHANNEL_9);
+    uint32_t temp_adc = Read_ADC_Channel(ADC_CHANNEL_TEMPSENSOR);
+    uint32_t vref_adc = Read_ADC_Channel(ADC_CHANNEL_VREFINT);
+
+    sensor_light_state = (HAL_GPIO_ReadPin(Light_do_GPIO_Port, Light_do_Pin) !=
+                          GPIO_PIN_RESET)
+                             ? 1U
+                             : 0U;
+    sensor_light_percent = (uint16_t)((4095U - light_adc) * 100U / 4095U);
+
+    if (vref_adc != 0U) {
+        uint32_t vdd_mv = 1200U * 4095U / vref_adc;
+        int32_t vsense_mv = (int32_t)(temp_adc * vdd_mv / 4095U);
+
+        sensor_vdd_mv = (uint16_t)vdd_mv;
+        sensor_chip_temp_x10 = (int16_t)(((vsense_mv - 1430) * 100) / 43 + 250);
     }
 }
 
@@ -274,6 +326,12 @@ void MPU6050_System_Init(void)
 void Sensor_Process(void)
 {
     uint32_t now = HAL_GetTick();
+
+    /* 光照 / 片内温度每 200ms 采样一次 */
+    if (now - env_lasttime >= ENV_SAMPLE_INTERVAL_MS) {
+        env_lasttime = now;
+        Sensor_UpdateEnv();
+    }
 
     /* DHT11 每2秒读一次（仅用湿度） */
     if (now - dht11_lasttime >= SENSOR_READ_INTERVAL_MS) {
@@ -308,10 +366,35 @@ void Sensor_Process(void)
     }
 
     now = HAL_GetTick();
-    if (mpu6050_initialized &&
-        now - mpu6050_lasttime >= MPU6050_SAMPLE_INTERVAL_MS) {
-        MPU6050_Read_All(&hi2c1, &mpu6050_data);
-        mpu6050_lasttime = HAL_GetTick();
+    if (!mpu6050_initialized) {
+        /* 上电时序、接触不良都可能让初始化失败。前 5 次每 2s 重试一次，
+         * 之后降到 30s —— 芯片要是真坏了，不能每 2s 拿 250ms 的延时去拖慢主循环。 */
+        uint32_t interval = (mpu6050_retry_count < 5U) ? MPU6050_RETRY_INTERVAL_MS
+                                                       : MPU6050_RETRY_SLOW_MS;
+        if (now - mpu6050_retry_lasttime >= interval) {
+            mpu6050_retry_lasttime = now;
+            if (mpu6050_retry_count < 0xFFU) {
+                ++mpu6050_retry_count;
+            }
+            MPU6050_System_Init();
+        }
+    } else if ((int32_t)(now - mpu6050_next_sample) >= 0) {
+        if (hi2c1.State != HAL_I2C_STATE_READY) {
+            /* OLED 的中断/DMA 刷新正占着 I2C1。这时候发起阻塞读一定会拿到
+             * HAL_BUSY，既读不到数据又会把错误计数刷爆，所以先让一让。 */
+            mpu6050_next_sample = now + MPU6050_RETRY_MS;
+        } else if (MPU6050_Read_All(&hi2c1, &mpu6050_data) == 0U) {
+            mpu6050_fail_count = 0;
+            mpu6050_next_sample = now + MPU6050_SAMPLE_INTERVAL_MS;
+        } else {
+            /* 连续失败要指数退避。固定 10ms 重试会把 I2C 总线打满，
+             * 主循环拿不到时间片，界面看起来就是卡死。 */
+            ++mpu6050_read_errors;
+            if (mpu6050_fail_count < 6U) {
+                ++mpu6050_fail_count;
+            }
+            mpu6050_next_sample = now + ((uint32_t)MPU6050_RETRY_MS << mpu6050_fail_count);
+        }
     }
 }
 
@@ -330,6 +413,7 @@ void Servo(void)
         }
     }
 
-    uint8_t duty = (10 * Count / (float)count_MAX + 2.5) / 100 * 2000;
+    /* 整数映射：0.5ms~2.5ms 对应 0°~180°，CCR = 50 + 200 * Count / 20 */
+    uint16_t duty = (uint16_t)(50U + 200U * Count / count_MAX);
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
 }

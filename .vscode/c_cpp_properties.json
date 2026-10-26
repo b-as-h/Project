@@ -13,22 +13,18 @@
                 "${workspaceFolder}/Core/bash_oled/graphics",
                 "${workspaceFolder}/Core/bash_oled/driver",
                 "${workspaceFolder}/Core/bash_ui/include",
-                "${workspaceFolder}/Core/bash_ui/src",
-                "C:/Users/bash/AppData/Local/Keil_v5/ARM/ARMCLANG/include",
-                "C:/Users/bash/AppData/Local/Keil_v5/ARM/ARMCLANG/include/libcxx",
-                "C:/Users/bash/AppData/Local/Keil_v5/ARM/INC"
+                "${workspaceFolder}/Core/bash_ui/src"
             ],
             "defines": [
                 "STM32F103xB",
                 "USE_HAL_DRIVER",
-                "__CC_ARM",
-                "ARM_MATH_CM3",
-                "__GNUC__"
+                "ARM_MATH_CM3"
             ],
-            "compilerPath": "C:/Users/bash/AppData/Local/Keil_v5/ARM/ARMCLANG/bin/armclang.exe",
+            "compilerPath": "C:/Users/bash/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc.exe",
             "cStandard": "c17",
             "cppStandard": "gnu++17",
-            "intelliSenseMode": "windows-clang-arm"
+            "intelliSenseMode": "windows-gcc-arm",
+            "compileCommands": "${workspaceFolder}/build/Release/compile_commands.json"
         }
     ],
     "version": 4

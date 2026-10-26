@@ -1,9 +1,6 @@
 /**
  * @file font_bash.h
- * @brief BASH_UI 使用的字体声明。
- *
- * font_6x10: u8g2 格式 ASCII 字体（用于菜单和页面文字）
- * zh16x16: 中文 16x16 位图字体数据（用于中文显示）
+ * @brief 自绘字体：6x8 ASCII + 16x16 中文位图。
  */
 
 #ifndef FONT_BASH_H
@@ -14,9 +11,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/** 6x10 像素 ASCII 字体（u8g2 格式，用于菜单和页面文字）。 */
-extern const uint8_t font_6x10[];
 
 /** 中文 16x16 字体数据（每字符 36 字节：4字节UTF-8头 + 32字节位图）。 */
 extern const uint8_t zh16x16[][36];

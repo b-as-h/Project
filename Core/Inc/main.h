@@ -69,8 +69,6 @@ void Error_Handler(void);
 #define Bule_switch_GPIO_Port GPIOB
 #define oled_ui_Pin GPIO_PIN_12
 #define oled_ui_GPIO_Port GPIOB
-#define Blue_en_Pin GPIO_PIN_8
-#define Blue_en_GPIO_Port GPIOA
 #define Blue_Tx_Pin GPIO_PIN_9
 #define Blue_Tx_GPIO_Port GPIOA
 #define Blue_Rx_Pin GPIO_PIN_10

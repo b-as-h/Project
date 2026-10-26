@@ -2,16 +2,26 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Keil Build & Download",
+            "label": "CMake: Configure Release",
             "type": "shell",
-            "command": "C:/Users/bash/AppData/Local/Keil_v5/UV4/UV4.exe",
+            "command": "cmake",
             "args": [
-                "-r",
-                "-d",
-                "-j0",
-                "-o", "${workspaceFolder}/build_download_log.txt",
-                "${workspaceFolder}/MDK-ARM/${workspaceFolderBasename}.uvprojx"
+                "--preset",
+                "Release"
             ],
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake: Build Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "Release",
+                "--parallel"
+            ],
+            "dependsOn": "CMake: Configure Release",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -30,15 +40,27 @@
             }
         },
         {
-            "label": "Keil Build Only",
+            "label": "CMake: Configure Debug",
             "type": "shell",
-            "command": "C:/Users/bash/AppData/Local/Keil_v5/UV4/UV4.exe",
+            "command": "cmake",
             "args": [
-                "-r",
-                "-j0",
-                "-o", "${workspaceFolder}/build_log.txt",
-                "${workspaceFolder}/MDK-ARM/${workspaceFolderBasename}.uvprojx"
+                "--preset",
+                "Debug"
             ],
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake: Build Debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "Debug",
+                "--parallel"
+            ],
+            "dependsOn": "CMake: Configure Debug",
+            "group": "build",
             "problemMatcher": {
                 "owner": "c",
                 "fileLocation": "absolute",
@@ -53,14 +75,22 @@
             }
         },
         {
-            "label": "Keil Download Only",
+            "label": "CMake: Build and Flash (ST-Link)",
             "type": "shell",
-            "command": "C:/Users/bash/AppData/Local/Keil_v5/UV4/UV4.exe",
+            "command": "openocd",
             "args": [
-                "-d",
-                "-o", "${workspaceFolder}/download_log.txt",
-                "${workspaceFolder}/MDK-ARM/${workspaceFolderBasename}.uvprojx"
+                "-f",
+                "interface/stlink.cfg",
+                "-f",
+                "target/stm32f1x.cfg",
+                "-c",
+                "program {${workspaceFolder}/build/Release/Project.elf} verify reset exit"
             ],
+            "dependsOn": "CMake: Build Release",
+            "dependsOrder": "sequence",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
             "problemMatcher": {
                 "owner": "c",
                 "fileLocation": "absolute",

@@ -17,17 +17,8 @@ UI_PageType UI_CurrentPageType(void)
 
 void UI_ResetPageState(UI_PageState *state, UI_PageId page)
 {
-    const UI_PageRoute *route;
-
     state->page = page;
     state->selected = 0U;
-    state->top = 0U;
-    state->scroll_q8 = 0;
-    state->focus_q8 = 0;
-    route = UI_GetRoute(page);
-    if (route != NULL && route->type == UI_PAGE_MENU) {
-        UI_MenuRepairFocus(state);
-    }
 }
 
 static void ui_start_transition(const UI_PageState *outgoing,
@@ -41,14 +32,12 @@ static void ui_start_transition(const UI_PageState *outgoing,
     ui_state.blocked_keys |= (uint8_t)((ui_state.keys[0].stable ? UI_KEY_UP : 0U) |
                            (ui_state.keys[1].stable ? UI_KEY_DOWN : 0U) |
                            (ui_state.keys[2].stable ? UI_KEY_OK : 0U));
-#if UI_ENABLE_CUSTOM
     {
         const UI_PageRoute *route = UI_GetRoute(outgoing->page);
         if (route != NULL && route->type == UI_PAGE_CUSTOM) {
             ui_state.transition.leave_custom = 1U;
         }
     }
-#endif
     ui_state.dirty = 1U;
 }
 
@@ -69,25 +58,20 @@ UI_Status UI_NavigateTo(UI_PageId page, uint32_t now)
         ui_state.dirty = 1U;
         return UI_NAVIGATION_FULL;
     }
-#if UI_ENABLE_CUSTOM
     if (UI_CurrentPageType() == UI_PAGE_CUSTOM &&
         route->type == UI_PAGE_CUSTOM) {
         return UI_NOT_ALLOWED;
     }
-#endif
     outgoing = ui_state.current;
     ui_state.stack[ui_state.stack_count++] = outgoing;
     UI_ResetPageState(&ui_state.current, page);
     ui_state.home_anim.active = 0U;
-    ui_state.list_anim.active = 0U;
     ui_start_transition(&outgoing, false, now);
-#if UI_ENABLE_CUSTOM
     if (route->type == UI_PAGE_CUSTOM) {
         ui_state.in_callback = 1U;
         UI_CustomOnEnter(page);
         ui_state.in_callback = 0U;
     }
-#endif
     return UI_OK;
 }
 
@@ -104,22 +88,14 @@ UI_Status UI_NavigateBack(uint32_t now)
     }
     outgoing = ui_state.current;
     ui_state.current = ui_state.stack[--ui_state.stack_count];
-    if (UI_CurrentPageType() == UI_PAGE_MENU) {
-        UI_MenuRepairFocus(&ui_state.current);
-    }
     ui_state.home_anim.active = 0U;
-    ui_state.list_anim.active = 0U;
     ui_start_transition(&outgoing, true, now);
-#if UI_ENABLE_CUSTOM
     route = UI_GetRoute(ui_state.current.page);
     if (route != NULL && route->type == UI_PAGE_CUSTOM) {
         ui_state.in_callback = 1U;
         UI_CustomOnEnter(ui_state.current.page);
         ui_state.in_callback = 0U;
     }
-#else
-    (void)route;
-#endif
     return UI_OK;
 }
 
@@ -130,13 +106,11 @@ void UI_AnimateNavigation(uint32_t now)
         ui_state.dirty = 1U;
         if (elapsed >= UI_PAGE_MS) {
             ui_state.transition.active = 0U;
-#if UI_ENABLE_CUSTOM
             if (ui_state.transition.leave_custom != 0U) {
                 ui_state.in_callback = 1U;
                 UI_CustomOnLeave(ui_state.transition.outgoing.page);
                 ui_state.in_callback = 0U;
             }
-#endif
         }
     }
 }
@@ -151,22 +125,9 @@ void UI_DrawPage(const UI_PageState *state, int16_t x_offset,
         return;
     }
     switch (route->type) {
-#if UI_ENABLE_HOME
     case UI_PAGE_HOME:
         UI_HomeDraw(state, x_offset, clip_x, clip_width);
         break;
-#endif
-#if UI_ENABLE_MENU
-    case UI_PAGE_MENU:
-        UI_MenuDraw(state, x_offset, clip_x, clip_width);
-        break;
-#endif
-#if UI_ENABLE_INFO
-    case UI_PAGE_INFO:
-        UI_InfoDraw(state, x_offset, clip_x, clip_width);
-        break;
-#endif
-#if UI_ENABLE_CUSTOM
     case UI_PAGE_CUSTOM:
         /* Custom pages draw through the same transition clip as built-in pages. */
         OLED_SetClipWindow(clip_x, 0, clip_width, UI_SCREEN_HEIGHT);
@@ -174,7 +135,6 @@ void UI_DrawPage(const UI_PageState *state, int16_t x_offset,
         UI_CustomOnDraw(state->page, x_offset, clip_x, clip_width);
         ui_state.in_callback = 0U;
         break;
-#endif
     default:
         break;
     }
@@ -248,8 +208,6 @@ void UI_DrawScene(uint32_t now)
     } else if (ui_state.reject_flash != 0U) {
         ui_state.reject_flash = 0U;
     }
-    UI_DialogDraw();
-    UI_ToastDraw();
     OLED_ResetClipWindow();
     OLED_SetDrawMode(OLED_DRAW_SET);
 }

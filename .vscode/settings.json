@@ -1,17 +1,12 @@
 {
-    "KeilAssistant.MDK.Uv4Path": "C:\\Users\\bash\\AppData\\Local\\Keil_v5\\UV4\\UV4.exe",
     "files.watcherExclude": {
         "**/build/**": true,
-        "**/MDK-ARM/Listings/**": true,
-        "**/MDK-ARM/Objects/**": true,
         "**/.git/**": true
     },
     "C_Cpp.intelliSenseCacheSize": 1024,
     "C_Cpp.exclusionPolicy": "checkFilesAndFolders",
     "search.exclude": {
-        "**/build/**": true,
-        "**/MDK-ARM/Listings/**": true,
-        "**/MDK-ARM/Objects/**": true
+        "**/build/**": true
     },
     "files.exclude": {
         "**/.git": true,
@@ -19,5 +14,25 @@
         "**/.hg": true,
         "**/CVS": true,
         "**/.DS_Store": true
-    }
+    },
+    "cmake.cmakePath": "cube-cmake",
+    "cmake.configureArgs": [
+        "-DCMAKE_COMMAND=cube-cmake"
+    ],
+    "cmake.preferredGenerators": [
+        "Ninja"
+    ],
+    "stm32cube-ide-clangd.path": "cube",
+    "stm32cube-ide-clangd.arguments": [
+        "starm-clangd",
+        "--query-driver=${env:CUBE_BUNDLE_PATH}/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gcc*",
+        "--query-driver=${env:CUBE_BUNDLE_PATH}/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-g++*"
+    ],
+    "VsCodeTaskButtons.tasks": [
+        {
+            "label": "$(tools) 编译下载",
+            "task": "CMake: Build and Flash (ST-Link)",
+            "tooltip": "Build Release, flash via ST-Link, verify, and reset"
+        }
+    ]
 }

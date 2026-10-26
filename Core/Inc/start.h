@@ -22,15 +22,23 @@ typedef struct {
     uint8_t valid; /* 1=数据有效 */
 } DHT11_Data;
 
-/* ========== 传感器数据（供 app_ui.c 访问） ========== */
+/* ========== 传感器数据（供 app_ui.c / bt.c 访问） ========== */
 extern DHT11_Data dht11_data;      /* DHT11 温湿度数据 */
 extern int16_t ds18b20_temp;       /* DS18B20 温度×100 */
 extern uint8_t ds18b20_valid;      /* DS18B20 数据有效标志 */
 
+/* 光照与片内传感器：由 Sensor_Process() 周期采样，与页面是否打开无关 */
+extern uint16_t sensor_light_percent; /* 光照强度 0~100 */
+extern uint8_t sensor_light_state;    /* 1=明亮环境，0=黑暗环境 */
+extern int16_t sensor_chip_temp_x10;  /* 片内温度 ×10（298 表示 29.8℃） */
+extern uint16_t sensor_vdd_mv;        /* VDDA 电压，单位 mV */
+
 /* ========== MPU6050 数据 ========== */
 #include "mpu6050.h"
 extern MPU6050_t mpu6050_data;
-extern uint8_t mpu6050_initialized;
+extern uint8_t mpu6050_initialized;    /* 1=初始化成功，可以采样 */
+extern uint8_t mpu6050_init_status;    /* 最近一次初始化结果：MPU6050_OK / MPU6050_ERR_* */
+extern uint32_t mpu6050_read_errors;   /* 采样失败累计次数（多为 I2C 被 OLED 异步刷新占用） */
 
 /* ========== 舵机控制变量 ========== */
 extern uint8_t Servo_lock;         /* 舵机锁定状态 */

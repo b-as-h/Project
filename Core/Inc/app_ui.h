@@ -48,6 +48,7 @@ enum {
     APP_PAGE_SENSOR   = 3,      /* 自定义：传感器显示 */
     APP_PAGE_SERVO    = 4,      /* 自定义：舵机控制 */
     APP_PAGE_MPU6050  = 5,      /* 自定义：MPU6050 显示 */
+    APP_PAGE_SYSINFO  = 6,      /* 自定义：系统信息 / 自检 */
 };
 
 #ifdef __cplusplus

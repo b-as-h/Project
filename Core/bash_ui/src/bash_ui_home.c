@@ -1,8 +1,6 @@
 #include "bash_ui_internal.h"
 #include "font_bash.h"
 
-#if UI_ENABLE_HOME
-
 static const UI_HomePage *ui_home_page(const UI_PageState *state)
 {
     const UI_PageRoute *route = UI_GetRoute(state->page);
@@ -184,12 +182,3 @@ void UI_HomeDraw(const UI_PageState *state, int16_t x_offset,
     }
     OLED_ResetClipWindow();
 }
-
-#else
-void UI_HomeAnimate(uint32_t now) { (void)now; }
-void UI_HomeInput(UI_InputEvent event, uint32_t now)
-{ (void)event; (void)now; }
-void UI_HomeDraw(const UI_PageState *state, int16_t x_offset,
-                    int16_t clip_x, uint16_t clip_width)
-{ (void)state; (void)x_offset; (void)clip_x; (void)clip_width; }
-#endif
