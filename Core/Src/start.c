@@ -27,6 +27,15 @@ static uint32_t dht11_lasttime = 0;
 int16_t ds18b20_temp = 0;
 uint8_t ds18b20_valid = 0;
 static uint32_t ds18b20_lasttime = 0;
+static uint32_t ds18b20_conversion_started = 0;
+static uint8_t ds18b20_conversion_pending = 0;
+
+/* MPU6050 */
+static uint32_t mpu6050_lasttime = 0;
+
+#define SENSOR_READ_INTERVAL_MS 2000U
+#define DS18B20_CONVERSION_TIME_MS 750U
+#define MPU6050_SAMPLE_INTERVAL_MS 100U
 
 /* 编码器计数（舵机控制用） */
 static uint32_t Count = 0;
@@ -198,36 +207,31 @@ static uint8_t DS18B20_ReadByte(void)
     return data;
 }
 
-static int16_t Read_DS18B20(void)
+static uint8_t DS18B20_StartConversion(void)
 {
-    uint8_t presence;
-    uint8_t temp_l, temp_h;
-    int16_t raw;
-
-    presence = DS18B20_Reset();
-    if (!presence) return -32768;
+    if (!DS18B20_Reset()) return 0;
 
     DS18B20_WriteByte(0xCC); /* 跳过 ROM */
     DS18B20_WriteByte(0x44); /* 启动温度转换 */
+    return 1;
+}
 
-    /* 等待转换完成 */
-    DS18B20_SetInput();
-    uint32_t wait_start = HAL_GetTick();
-    while (HAL_GPIO_ReadPin(T_GPIO_Port, T_Pin) == GPIO_PIN_RESET) {
-        if (HAL_GetTick() - wait_start > 1000) return -32768;
-    }
+static uint8_t DS18B20_ReadTemperature(int16_t *temperature)
+{
+    uint8_t temp_l, temp_h;
+    int16_t raw;
 
-    presence = DS18B20_Reset();
-    if (!presence) return -32768;
+    if (temperature == NULL || !DS18B20_Reset()) return 0;
 
     DS18B20_WriteByte(0xCC); /* 跳过 ROM */
-    DS18B20_WriteByte(0xBE); /* 读暂存器 */
+    DS18B20_WriteByte(0xBE); /* 读取暂存器 */
 
     temp_l = DS18B20_ReadByte();
     temp_h = DS18B20_ReadByte();
 
     raw = (int16_t)((temp_h << 8) | temp_l);
-    return raw * 100 / 16;
+    *temperature = raw * 100 / 16;
+    return 1;
 }
 
 /* ========== ADC 读取 ========== */
@@ -238,19 +242,21 @@ uint32_t Read_ADC_Channel(uint32_t channel)
     ADC_ChannelConfTypeDef sConfig = {0};
     sConfig.Channel = channel;
     sConfig.Rank = ADC_REGULAR_RANK_1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
-    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-
-    /* 临时改为单通道单次转换 */
-    hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-    hadc1.Init.NbrOfConversion = 1;
-    HAL_ADC_Init(&hadc1);
-
-    HAL_ADC_Start(&hadc1);
-    if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK) {
-        value = HAL_ADC_GetValue(&hadc1);
+    /* 内部温度和参考电压通道要求至少 17.1 us 的采样时间。 */
+    sConfig.SamplingTime = (channel == ADC_CHANNEL_TEMPSENSOR ||
+                            channel == ADC_CHANNEL_VREFINT)
+                               ? ADC_SAMPLETIME_239CYCLES_5
+                               : ADC_SAMPLETIME_71CYCLES_5;
+    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) {
+        return 0;
     }
-    HAL_ADC_Stop(&hadc1);
+
+    if (HAL_ADC_Start(&hadc1) == HAL_OK) {
+        if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK) {
+            value = HAL_ADC_GetValue(&hadc1);
+        }
+        HAL_ADC_Stop(&hadc1);
+    }
 
     return value;
 }
@@ -260,28 +266,52 @@ void MPU6050_System_Init(void)
 {
     if (MPU6050_Init(&hi2c1) == 0) {
         mpu6050_initialized = 1;
+        mpu6050_lasttime = HAL_GetTick();
     }
 }
 
 /* ========== 传感器定时读取 ========== */
 void Sensor_Process(void)
 {
+    uint32_t now = HAL_GetTick();
+
     /* DHT11 每2秒读一次（仅用湿度） */
-    if (HAL_GetTick() - dht11_lasttime >= 2000) {
+    if (now - dht11_lasttime >= SENSOR_READ_INTERVAL_MS) {
         dht11_data = Read_DHT11();
         dht11_lasttime = HAL_GetTick();
     }
 
-    /* DS18B20 每2秒读一次 */
-    if (HAL_GetTick() - ds18b20_lasttime >= 2000) {
-        int16_t temp = Read_DS18B20();
-        if (temp > -500) {
-            ds18b20_temp = temp;
+    /* 将单总线温度转换启动和后续读取分开处理。 */
+    now = HAL_GetTick();
+    if (!ds18b20_conversion_pending &&
+        now - ds18b20_lasttime >= SENSOR_READ_INTERVAL_MS) {
+        ds18b20_lasttime = now;
+        if (DS18B20_StartConversion()) {
+            ds18b20_conversion_started = HAL_GetTick();
+            ds18b20_conversion_pending = 1;
+        } else {
+            ds18b20_valid = 0;
+        }
+    }
+
+    now = HAL_GetTick();
+    if (ds18b20_conversion_pending &&
+        now - ds18b20_conversion_started >= DS18B20_CONVERSION_TIME_MS) {
+        int16_t temperature;
+        ds18b20_conversion_pending = 0;
+        if (DS18B20_ReadTemperature(&temperature)) {
+            ds18b20_temp = temperature;
             ds18b20_valid = 1;
         } else {
             ds18b20_valid = 0;
         }
-        ds18b20_lasttime = HAL_GetTick();
+    }
+
+    now = HAL_GetTick();
+    if (mpu6050_initialized &&
+        now - mpu6050_lasttime >= MPU6050_SAMPLE_INTERVAL_MS) {
+        MPU6050_Read_All(&hi2c1, &mpu6050_data);
+        mpu6050_lasttime = HAL_GetTick();
     }
 }
 

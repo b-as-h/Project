@@ -44,7 +44,7 @@ void MPU6050_System_Init(void);
 
 /**
  * @brief 传感器定时读取（主循环调用）
- * @note  DHT11 每2秒读一次（仅取湿度），DS18B20 每2秒读一次
+ * @note  DHT11 和 DS18B20 每2秒更新一次；MPU6050 在后台按100ms周期采样
  */
 void Sensor_Process(void);
 

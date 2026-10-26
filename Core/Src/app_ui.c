@@ -465,14 +465,6 @@ static void App_UI_UpdateSensorData(void)
     }
 }
 
-static void App_UI_UpdateMpuData(void)
-{
-    if (mpu6050_initialized)
-    {
-        MPU6050_Read_All(&hi2c1, &mpu6050_data);
-    }
-}
-
 /* ========== 首页 ========== */
 static const UI_HomeItem home_items[] = {
     {"Sensor", icon_sensor, APP_PAGE_SENSOR},
@@ -754,7 +746,6 @@ bool UI_CustomOnTick(UI_PageId page, uint32_t now_ms)
         if (now_ms - mpu_last_tick >= 100)
         {
             mpu_last_tick = now_ms;
-            App_UI_UpdateMpuData();
             return true;
         }
         return false;
