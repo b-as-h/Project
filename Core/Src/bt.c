@@ -220,26 +220,19 @@ uint32_t BT_GetBaud(void)
 /* ========== 舵机 ========== */
 static uint16_t bt_servo_angle(void)
 {
-    uint32_t count = __HAL_TIM_GET_COUNTER(&htim2);
-    if (count > 20U) {
-        count = 20U;
-    }
-    return (uint16_t)(count * 180U / 20U);
+    return (uint16_t)Servo_GetAngle();
 }
 
 static void bt_servo_set(int32_t angle)
 {
-    uint32_t count;
-
     if (angle < 0) {
         angle = 0;
     }
     if (angle > 180) {
         angle = 180;
     }
-    count = (uint32_t)angle * 20U / 180U;
-    __HAL_TIM_SET_COUNTER(&htim2, count);
-    Servo();
+    /* 走 Servo_SetAngle：只改软件位置并刷新 CCR，不触碰 TIM2 编码器计数器 */
+    Servo_SetAngle((uint8_t)angle);
 }
 
 /* ========== 应答 ========== */

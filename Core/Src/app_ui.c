@@ -450,8 +450,8 @@ static uint8_t select_num = 0;                        /* 当前选择的数字(0
 static uint8_t error_count = 0;                       /* 错误次数 */
 
 /* ========== 舵机控制变量 ========== */
-static uint32_t servo_saved_count = 0; /* 进入舵机页时保存的编码器值 */
-static uint32_t servo_last_count = 0;  /* 锁定时保存的编码器值 */
+/* 舵机档位由 start.c 的 servo_pos 统一维护，页面这边只负责转发编码器增量，
+ * 不再保存/恢复 TIM2 计数器 —— 那正是之前"只能停在 0 和 180"的根源。 */
 
 /* ========== 自定义页定时器 ========== */
 static uint32_t lock_last_tick = 0;
@@ -535,13 +535,7 @@ void UI_CustomOnEnter(UI_PageId page)
         break;
 
     case APP_PAGE_SERVO:
-        /* 保存当前编码器值，设置为舵机角度 */
-        servo_saved_count = __HAL_TIM_GET_COUNTER(&htim2);
-        /* 从 Servo_lock 恢复或设置默认值 */
-        if (Servo_lock)
-        {
-            __HAL_TIM_SET_COUNTER(&htim2, servo_last_count);
-        }
+        /* 舵机位置由 servo_pos 保存，进出页面都不需要动编码器计数器 */
         servo_last_tick = 0;
         break;
 
@@ -568,16 +562,9 @@ void UI_CustomOnEnter(UI_PageId page)
 
 void UI_CustomOnLeave(UI_PageId page)
 {
-    switch (page)
-    {
-    case APP_PAGE_SERVO:
-        /* 恢复编码器值 */
-        __HAL_TIM_SET_COUNTER(&htim2, servo_saved_count);
-        break;
-
-    default:
-        break;
-    }
+    /* 目前没有页面需要收尾：舵机位置由 servo_pos 保存，
+     * 编码器计数器不再被任何页面改写，离开时无需恢复。 */
+    (void)page;
 }
 
 void UI_CustomOnInput(UI_PageId page, UI_InputEvent event)
@@ -655,37 +642,20 @@ void UI_CustomOnInput(UI_PageId page, UI_InputEvent event)
         }
         if (event.action == UI_INPUT_OK && event.source == UI_INPUT_RELEASE)
         {
-            /* 切换舵机锁定状态 */
-            if (Servo_lock)
-            {
-                /* 解锁：恢复之前的位置 */
-                Servo_lock = 0;
-                __HAL_TIM_SET_COUNTER(&htim2, servo_last_count);
-            }
-            else
-            {
-                /* 锁定：保存当前位置 */
-                servo_last_count = __HAL_TIM_GET_COUNTER(&htim2);
-                Servo_lock = 1;
-            }
+            /* 切换锁定状态：锁定后编码器不再改变角度，位置原地保持，
+             * 解锁时无需恢复 —— servo_pos 一直是最后命令的角度。 */
+            Servo_lock = (uint8_t)!Servo_lock;
+            break;
         }
 
-        /* 编码器控制舵机角度 */
+        /* 编码器调整角度：只把增量交给 servo_pos，不回写 TIM2 计数器。
+         * 方向沿用原逻辑：DOWN（计数器增大）对应角度增大。 */
         if (event.source == UI_INPUT_ENCODER && !Servo_lock)
         {
-            int32_t count = (int32_t)__HAL_TIM_GET_COUNTER(&htim2);
-            int16_t delta = (event.action == UI_INPUT_DOWN) ? (int16_t)event.steps : -(int16_t)event.steps;
-            count += delta;
-
-            /* 限制范围 0~20 */
-            if (count < 0)
-                count = 0;
-            if (count > 20)
-                count = 20;
-            __HAL_TIM_SET_COUNTER(&htim2, (uint32_t)count);
-
-            /* 更新舵机 PWM */
-            Servo();
+            int16_t delta = (event.action == UI_INPUT_DOWN)
+                                ? (int16_t)event.steps
+                                : -(int16_t)event.steps;
+            Servo_Step(delta);
         }
         break;
 
@@ -918,13 +888,9 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
             Font_DrawMixedString(x_offset + 70, 0, "已解锁");
         }
 
-        /* 当前角度 */
-        uint32_t count = __HAL_TIM_GET_COUNTER(&htim2);
-        if (count > 20)
-            count = 20;
-        int angle = (int)(count * 180 / 20);
+        /* 当前角度（直接读软件位置，与实际 CCR 输出始终一致） */
         p = Fmt_Str(buf, "Angle: ");
-        p = Fmt_I32(p, angle);
+        p = Fmt_I32(p, (int32_t)Servo_GetAngle());
         Font_DrawMixedString(x_offset + 2, 20, buf);
 
         /* 操作提示 */

@@ -41,7 +41,7 @@ extern uint8_t mpu6050_init_status;    /* 最近一次初始化结果：MPU6050_
 extern uint32_t mpu6050_read_errors;   /* 采样失败累计次数（多为 I2C 被 OLED 异步刷新占用） */
 
 /* ========== 舵机控制变量 ========== */
-extern uint8_t Servo_lock;         /* 舵机锁定状态 */
+extern uint8_t Servo_lock;         /* 舵机锁定状态：1=锁定，编码器不再改变角度 */
 
 /* ========== 函数声明 ========== */
 
@@ -57,10 +57,36 @@ void MPU6050_System_Init(void);
 void Sensor_Process(void);
 
 /**
- * @brief 舵机控制函数
- * @note  编码器值 0~20 映射到舵机角度 0~180°
+ * @brief 设置舵机档位
+ * @param pos 0~20，对应 0°~180°，越界自动钳位
+ * @note  只改软件位置并刷新 CCR，不触碰 TIM2 编码器计数器
  */
-void Servo(void);
+void Servo_SetPos(int16_t pos);
+
+/**
+ * @brief 在当前档位上增减
+ * @param delta 增量，可正可负
+ * @note  越界自动钳位；越界量不会丢失，往回拧立即生效
+ */
+void Servo_Step(int16_t delta);
+
+/**
+ * @brief 读取当前档位
+ * @return 0~20
+ */
+int16_t Servo_GetPos(void);
+
+/**
+ * @brief 按角度设置舵机
+ * @param angle 0~180°
+ */
+void Servo_SetAngle(uint8_t angle);
+
+/**
+ * @brief 读取当前角度
+ * @return 0~180°
+ */
+uint8_t Servo_GetAngle(void);
 
 /**
  * @brief 读取 ADC 通道值
