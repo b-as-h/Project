@@ -12,7 +12,7 @@ set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc)
 set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
 set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++)
 set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}g++)
-set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
+find_program(CMAKE_OBJCOPY NAMES ${TOOLCHAIN_PREFIX}objcopy REQUIRED)
 set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
 
 set(CMAKE_EXECUTABLE_SUFFIX_ASM     ".elf")

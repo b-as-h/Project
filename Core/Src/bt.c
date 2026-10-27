@@ -251,7 +251,7 @@ static int32_t mpu_mg(float value)
 
 static void bt_reply_data(void)
 {
-    char buf[128];
+    char buf[200];
     char *p = buf;
 
     p = Fmt_Str(p, "+DATA,light=");
@@ -274,12 +274,23 @@ static void bt_reply_data(void)
     p = Fmt_U32(p, bt_servo_angle());
     p = Fmt_Str(p, ",lock=");
     p = Fmt_U32(p, Servo_lock ? 1U : 0U);
+    /* 陀螺仪角速度（°/s，取整）与卡尔曼姿态角（×10，一位小数） */
+    p = Fmt_Str(p, ",gx=");
+    p = Fmt_I32(p, (int32_t)mpu6050_data.Gx);
+    p = Fmt_Str(p, ",gy=");
+    p = Fmt_I32(p, (int32_t)mpu6050_data.Gy);
+    p = Fmt_Str(p, ",gz=");
+    p = Fmt_I32(p, (int32_t)mpu6050_data.Gz);
+    p = Fmt_Str(p, ",roll=");
+    p = Fmt_Fixed(p, (int32_t)(mpu6050_data.KalmanAngleX * 10.0f), 1);
+    p = Fmt_Str(p, ",pitch=");
+    p = Fmt_Fixed(p, (int32_t)(mpu6050_data.KalmanAngleY * 10.0f), 1);
     BT_SendString(buf);
 }
 
 static void bt_send_telemetry(void)
 {
-    char buf[80];
+    char buf[128];
     char *p = buf;
 
     p = Fmt_Str(p, "$D,");
@@ -294,6 +305,17 @@ static void bt_send_telemetry(void)
     p = Fmt_I32(p, mpu_mg(mpu6050_data.Ay));
     *p++ = ',';
     p = Fmt_I32(p, mpu_mg(mpu6050_data.Az));
+    /* 追加陀螺仪与姿态，旧版上位机只取前 6 个字段，不受影响 */
+    *p++ = ',';
+    p = Fmt_I32(p, (int32_t)mpu6050_data.Gx);
+    *p++ = ',';
+    p = Fmt_I32(p, (int32_t)mpu6050_data.Gy);
+    *p++ = ',';
+    p = Fmt_I32(p, (int32_t)mpu6050_data.Gz);
+    *p++ = ',';
+    p = Fmt_I32(p, (int32_t)(mpu6050_data.KalmanAngleX * 10.0f));
+    *p++ = ',';
+    p = Fmt_I32(p, (int32_t)(mpu6050_data.KalmanAngleY * 10.0f));
     BT_SendString(buf);
 }
 
