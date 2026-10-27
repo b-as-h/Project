@@ -57,36 +57,80 @@ void MPU6050_System_Init(void);
 void Sensor_Process(void);
 
 /**
- * @brief 设置舵机档位
- * @param pos 0~20，对应 0°~180°，越界自动钳位
- * @note  只改软件位置并刷新 CCR，不触碰 TIM2 编码器计数器
+ * @brief 设置舵机角度（立即到位）
+ * @param a10 0~1800，单位 0.1°，越界自动钳位
+ * @note  会取消正在进行的平滑运动或扫描
  */
-void Servo_SetPos(int16_t pos);
+void Servo_SetAngleX10(int16_t a10);
 
 /**
- * @brief 在当前档位上增减
- * @param delta 增量，可正可负
- * @note  越界自动钳位；越界量不会丢失，往回拧立即生效
+ * @brief 读取当前角度
+ * @return 0~1800，单位 0.1°
  */
-void Servo_Step(int16_t delta);
+int16_t Servo_GetAngleX10(void);
 
 /**
- * @brief 读取当前档位
- * @return 0~20
- */
-int16_t Servo_GetPos(void);
-
-/**
- * @brief 按角度设置舵机
+ * @brief 按整度设置舵机（立即到位）
  * @param angle 0~180°
  */
 void Servo_SetAngle(uint8_t angle);
 
 /**
- * @brief 读取当前角度
+ * @brief 读取当前角度（四舍五入到整度）
  * @return 0~180°
  */
 uint8_t Servo_GetAngle(void);
+
+/**
+ * @brief 在当前角度上按整度增减（编码器页用）
+ * @param deg 增量，可正可负；越界自动钳位，越界量不丢失
+ * @note  会取消正在进行的扫描
+ */
+void Servo_Step(int16_t deg);
+
+/**
+ * @brief 平滑运动到目标角度
+ * @param target_a10 目标角度 ×10（0~1800）
+ * @param speed_dps  角速度，单位 °/s；传 0 用默认 60°/s
+ * @note  非阻塞，必须由主循环持续调用 Servo_Update()
+ */
+void Servo_MoveTo(int16_t target_a10, uint16_t speed_dps);
+
+/**
+ * @brief 启动 0°↔180° 来回扫描（雷达云台用）
+ * @param speed_dps 角速度，单位 °/s；传 0 用默认 60°/s
+ */
+void Servo_SweepStart(uint16_t speed_dps);
+
+/**
+ * @brief 停止扫描/平滑运动，原地保持
+ */
+void Servo_SweepStop(void);
+
+/**
+ * @brief 是否正在运动
+ * @return 1=运动中
+ */
+uint8_t Servo_IsMoving(void);
+
+/**
+ * @brief 平滑运动推进，主循环每轮必须调用一次
+ * @param now_ms 传入 HAL_GetTick()
+ * @return 1=仍在运动
+ * @note  内部按真实经过毫秒数插补，主循环被阻塞也不会变速
+ */
+uint8_t Servo_Update(uint32_t now_ms);
+
+/* ========== 雷达 ========== */
+#define RADAR_ALARM_DEFAULT_CM 30U
+
+extern uint16_t Radar_AlarmCm; /* 警报距离（cm），报警逻辑后续接入 */
+
+/**
+ * @brief 最近一次测距结果
+ * @return 距离 cm；-1 表示无回波，或超声波模块尚未接入
+ */
+int16_t Radar_GetDistanceCm(void);
 
 /**
  * @brief 读取 ADC 通道值

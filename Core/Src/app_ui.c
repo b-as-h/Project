@@ -450,7 +450,7 @@ static uint8_t select_num = 0;                        /* 当前选择的数字(0
 static uint8_t error_count = 0;                       /* 错误次数 */
 
 /* ========== 舵机控制变量 ========== */
-/* 舵机档位由 start.c 的 servo_pos 统一维护，页面这边只负责转发编码器增量，
+/* 舵机角度由 start.c 的 servo_a10 统一维护，页面这边只负责转发编码器增量，
  * 不再保存/恢复 TIM2 计数器 —— 那正是之前"只能停在 0 和 180"的根源。 */
 
 /* ========== 自定义页定时器 ========== */
@@ -458,6 +458,9 @@ static uint32_t lock_last_tick = 0;
 static uint32_t sensor_last_tick = 0;
 static uint32_t servo_last_tick = 0;
 static uint32_t mpu_last_tick = 0;
+/* 雷达页：编辑警报距离的状态 + 刷新计时 */
+static uint8_t radar_edit = 0;
+static uint32_t radar_last_tick = 0;
 /* MPU 页两个视图：0=数据，1=寄存器诊断 */
 #define MPU_VIEW_COUNT 2U
 static uint8_t mpu_view = 0;
@@ -476,12 +479,33 @@ static const char *App_UITestText(Sys_TestResult result)
     }
 }
 
+/* 雷达图标：半圆扫描盘 + 回波点 */
+static const uint8_t icon_radar[128] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xE0, 0x0F, 0x80, 0x00, 0x1C, 0x71, 0xC0,
+    0x00, 0x03, 0x81, 0x61, 0x80, 0x00, 0xC1, 0x33,
+    0x40, 0x00, 0x81, 0x1C, 0x20, 0x00, 0x01, 0x0E,
+    0x10, 0x04, 0x01, 0x17, 0x08, 0xCE, 0x87, 0x23,
+    0x08, 0x34, 0xD9, 0x21, 0x04, 0x08, 0xE1, 0x40,
+    0x04, 0x04, 0x70, 0x40, 0x04, 0x02, 0xB0, 0x40,
+    0x02, 0x02, 0x98, 0x80, 0x02, 0x01, 0x0C, 0x81,
+    0x02, 0x01, 0x06, 0x81, 0xFA, 0xFF, 0xFF, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
 /* ========== 首页 ========== */
 static const UI_HomeItem home_items[] = {
     {"Sensor", icon_sensor, APP_PAGE_SENSOR},
     {"Servo", icon_servo, APP_PAGE_SERVO},
     {"MPU6050", icon_mpu, APP_PAGE_MPU6050},
     {"System", icon_sysinfo, APP_PAGE_SYSINFO},
+    {"Radar", icon_radar, APP_PAGE_RADAR},
 };
 static const UI_HomePage home_pages[] = {
     {home_items, sizeof(home_items) / sizeof(home_items[0])},
@@ -495,6 +519,7 @@ static const UI_PageRoute routes[] = {
     {UI_PAGE_CUSTOM, 2}, /* page 4: 舵机（自定义） */
     {UI_PAGE_CUSTOM, 3}, /* page 5: MPU6050（自定义） */
     {UI_PAGE_CUSTOM, 4}, /* page 6: 系统信息（自定义） */
+    {UI_PAGE_CUSTOM, 5}, /* page 7: 雷达（自定义） */
 };
 
 /* ========== 应用描述（非 const，以便动态修改 root_page） ========== */
@@ -504,7 +529,7 @@ static UI_App app_desc = {
     .route_count = sizeof(routes) / sizeof(routes[0]),
     .home_pages = home_pages,
     .home_page_count = sizeof(home_pages) / sizeof(home_pages[0]),
-    .custom_page_count = 5, /* 锁屏、传感器、舵机、MPU6050、系统信息 */
+    .custom_page_count = 6, /* 锁屏、传感器、舵机、MPU6050、系统信息、雷达 */
 };
 
 /* ========== 密码验证 ========== */
@@ -535,7 +560,7 @@ void UI_CustomOnEnter(UI_PageId page)
         break;
 
     case APP_PAGE_SERVO:
-        /* 舵机位置由 servo_pos 保存，进出页面都不需要动编码器计数器 */
+        /* 舵机角度由 servo_a10 保存，进出页面都不需要动编码器计数器 */
         servo_last_tick = 0;
         break;
 
@@ -555,6 +580,16 @@ void UI_CustomOnEnter(UI_PageId page)
         SysInfo_SelfTest();
         break;
 
+    case APP_PAGE_RADAR:
+        radar_edit = 0;
+        radar_last_tick = 0;
+        /* 进页就开扫，否则"查看当前雷达数据"看到的是一动不动的旧值 */
+        if (!Servo_lock)
+        {
+            Servo_SweepStart(60);
+        }
+        break;
+
     default:
         break;
     }
@@ -562,9 +597,12 @@ void UI_CustomOnEnter(UI_PageId page)
 
 void UI_CustomOnLeave(UI_PageId page)
 {
-    /* 目前没有页面需要收尾：舵机位置由 servo_pos 保存，
-     * 编码器计数器不再被任何页面改写，离开时无需恢复。 */
-    (void)page;
+    /* 舵机角度由 servo_a10 保存，编码器计数器不再被任何页面改写，无需恢复。
+     * 雷达页要额外收尾：把云台停住，否则回到首页它还在继续扫。 */
+    if (page == APP_PAGE_RADAR)
+    {
+        Servo_SweepStop();
+    }
 }
 
 void UI_CustomOnInput(UI_PageId page, UI_InputEvent event)
@@ -643,19 +681,23 @@ void UI_CustomOnInput(UI_PageId page, UI_InputEvent event)
         if (event.action == UI_INPUT_OK && event.source == UI_INPUT_RELEASE)
         {
             /* 切换锁定状态：锁定后编码器不再改变角度，位置原地保持，
-             * 解锁时无需恢复 —— servo_pos 一直是最后命令的角度。 */
+             * 解锁时无需恢复 —— servo_a10 一直是最后命令的角度。 */
             Servo_lock = (uint8_t)!Servo_lock;
+            if (Servo_lock)
+            {
+                Servo_SweepStop(); /* 锁定 = 立刻停住，扫描和插补一起取消 */
+            }
             break;
         }
 
-        /* 编码器调整角度：只把增量交给 servo_pos，不回写 TIM2 计数器。
+        /* 编码器调整角度：每格 5°，并取消正在进行的扫描。
          * 方向沿用原逻辑：DOWN（计数器增大）对应角度增大。 */
         if (event.source == UI_INPUT_ENCODER && !Servo_lock)
         {
             int16_t delta = (event.action == UI_INPUT_DOWN)
                                 ? (int16_t)event.steps
                                 : -(int16_t)event.steps;
-            Servo_Step(delta);
+            Servo_Step((int16_t)(delta * 5));
         }
         break;
 
@@ -700,6 +742,35 @@ void UI_CustomOnInput(UI_PageId page, UI_InputEvent event)
             while (view >= (int16_t)SYSINFO_VIEW_COUNT)
                 view -= (int16_t)SYSINFO_VIEW_COUNT;
             sys_view = (uint8_t)view;
+            UI_Invalidate();
+        }
+        break;
+
+    case APP_PAGE_RADAR:
+        /* 长按 OK 返回首页 */
+        if (event.action == UI_INPUT_OK && event.source == UI_INPUT_REPEAT)
+        {
+            (void)UI_CustomRequestClose();
+            break;
+        }
+        /* 短按 OK 切换"编辑警报距离" */
+        if (event.action == UI_INPUT_OK && event.source == UI_INPUT_RELEASE)
+        {
+            radar_edit = (uint8_t)!radar_edit;
+            UI_Invalidate();
+            break;
+        }
+        /* 编辑态下编码器调警报距离，每格 5cm，范围 5~400cm */
+        if (event.source == UI_INPUT_ENCODER && radar_edit)
+        {
+            int16_t delta = (event.action == UI_INPUT_DOWN) ? (int16_t)event.steps
+                                                            : -(int16_t)event.steps;
+            int32_t v = (int32_t)Radar_AlarmCm + (int32_t)delta * 5;
+            if (v < 5)
+                v = 5;
+            if (v > 400)
+                v = 400;
+            Radar_AlarmCm = (uint16_t)v;
             UI_Invalidate();
         }
         break;
@@ -758,6 +829,15 @@ bool UI_CustomOnTick(UI_PageId page, uint32_t now_ms)
         }
         return false;
 
+    case APP_PAGE_RADAR:
+        /* 雷达页每 100ms 刷新（角度在扫描中一直在变） */
+        if (now_ms - radar_last_tick >= 100)
+        {
+            radar_last_tick = now_ms;
+            return true;
+        }
+        return false;
+
     default:
         return false;
     }
@@ -808,10 +888,13 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
         }
         else if (lock_state == LOCK_ALARM)
         {
+            /* 反显的顺序必须是「先画字，再 XOR 填充」。
+             * OLED_DrawBox 是实心填充，先填后画的话字也是白色的，
+             * 整行会糊成一块白板。 */
+            Font_DrawMixedString(x_offset + 4, 18, "ERROR!");
             OLED_SetDrawMode(OLED_DRAW_XOR);
             OLED_DrawBox(x_offset + 2, 16, 80, 16);
             OLED_SetDrawMode(OLED_DRAW_SET);
-            Font_DrawMixedString(x_offset + 4, 18, "ERROR!");
             Font_DrawMixedString(x_offset + 2, 38, "Try again");
         }
         break;
@@ -1106,6 +1189,57 @@ void UI_CustomOnDraw(UI_PageId page, int16_t x_offset,
             Font_DrawMixedString(x_offset + 2, 54, buf);
         }
         break;
+
+    case APP_PAGE_RADAR:
+    {
+        int16_t dist;
+
+        OLED_SetDrawMode(OLED_DRAW_SET);
+
+        /* 中文字模是 16x16，一屏最多排 4 行且行距必须给满 16px，否则会压在一起。
+         * 这里用 3 行数据 + 1 行 ASCII 提示，行距 17px 留出 1px 缝；
+         * 数值是 6x8 的 ASCII，下移 4px 才和汉字垂直居中对齐。 */
+        Font_DrawMixedString(x_offset + 92, 4, "RADAR");
+
+        /* 当前云台角度 */
+        Font_DrawMixedString(x_offset + 2, 0, "角度");
+        p = Fmt_I32(buf, (int32_t)Servo_GetAngle());
+        Font_DrawMixedString(x_offset + 40, 4, buf);
+
+        /* 当前距离：超声波未接入时 Radar_GetDistanceCm() 返回 -1 */
+        Font_DrawMixedString(x_offset + 2, 17, "距离");
+        dist = Radar_GetDistanceCm();
+        if (dist < 0)
+        {
+            p = Fmt_Str(buf, "--");
+        }
+        else
+        {
+            p = Fmt_I32(buf, (int32_t)dist);
+            p = Fmt_Str(p, "cm");
+        }
+        Font_DrawMixedString(x_offset + 40, 21, buf);
+
+        /* 警报距离：编辑态整行反显。
+         * 顺序不能反 —— OLED_DrawBox 是实心填充，先填后画会把字也画成白色，
+         * 整行糊成一片白。正确做法是先画字，再用 XOR 填充把字反色。 */
+        Font_DrawMixedString(x_offset + 2, 34, "警报");
+        p = Fmt_U32(buf, Radar_AlarmCm);
+        p = Fmt_Str(p, "cm");
+        Font_DrawMixedString(x_offset + 40, 38, buf);
+
+        if (radar_edit)
+        {
+            OLED_SetDrawMode(OLED_DRAW_XOR);
+            OLED_DrawBox(x_offset + 0, 33, 84, 18);
+            OLED_SetDrawMode(OLED_DRAW_SET);
+        }
+
+        /* 操作提示 */
+        Font_DrawMixedString(x_offset + 2, 52,
+                             radar_edit ? "[OK]Save [Hold]Back" : "[OK]Edit [Hold]Back");
+        break;
+    }
 
     default:
         break;

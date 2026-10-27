@@ -49,6 +49,7 @@ enum {
     APP_PAGE_SERVO    = 4,      /* 自定义：舵机控制 */
     APP_PAGE_MPU6050  = 5,      /* 自定义：MPU6050 显示 */
     APP_PAGE_SYSINFO  = 6,      /* 自定义：系统信息 / 自检 */
+    APP_PAGE_RADAR    = 7,      /* 自定义：雷达（角度 / 距离 / 警报距离） */
 };
 
 #ifdef __cplusplus

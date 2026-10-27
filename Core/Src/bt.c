@@ -18,6 +18,7 @@
 
 #define BT_ONLINE_TIMEOUT_MS 5000U
 #define BT_DEFAULT_PERIOD_MS 500U
+#define BT_RADAR_PERIOD_MS 50U /* 雷达帧周期，20Hz；9600 下约 240B/s，缓冲吃得下 */
 #define BT_FW_VERSION "1.4.0"
 
 /* ========== 环形缓冲 ========== */
@@ -43,6 +44,11 @@ static volatile uint8_t rx_seen;
 static uint8_t stream_on;
 static uint16_t stream_period = BT_DEFAULT_PERIOD_MS;
 static uint32_t stream_last_tick;
+
+/* 雷达模式：云台来回扫描，并按固定周期把 (角度, 距离) 上报给上位机。
+ * 帧格式 $R,<角度>,<距离cm>，距离 -1 表示本次没有有效回波。 */
+static uint8_t radar_on;
+static uint32_t radar_last_tick;
 
 /* 当前串口波特率；上电默认与 MX_USART1_UART_Init() 一致，掉电不保存 */
 static uint32_t current_baud = 9600U;
@@ -235,6 +241,34 @@ static void bt_servo_set(int32_t angle)
     Servo_SetAngle((uint8_t)angle);
 }
 
+/* ========== 雷达 ========== */
+
+/*
+ * 测距钩子。超声波模块接上后，在 start.c 里更新 radar_distance_cm 即可，
+ * 这里、协议、上位机都不用再改。
+ *
+ * 接上之后要注意：HC-SR04 一次测量最长阻塞约 25ms，这段时间云台还在走，
+ * 上报的角度和实际测距方向会有偏差。两种处理方式：
+ *   a) 接受偏差（60°/s 下 25ms 只差 1.5°，波束宽度 15°，影响不大）；
+ *   b) 测距前 Servo_SweepStop()，测完再恢复，代价是运动一顿一顿的。
+ */
+static int16_t radar_measure_cm(void)
+{
+    return Radar_GetDistanceCm();
+}
+
+static void bt_send_radar(void)
+{
+    char buf[24];
+    char *p = buf;
+
+    p = Fmt_Str(p, "$R,");
+    p = Fmt_I32(p, (int32_t)Servo_GetAngle());
+    *p++ = ',';
+    p = Fmt_I32(p, (int32_t)radar_measure_cm());
+    BT_SendString(buf);
+}
+
 /* ========== 应答 ========== */
 
 static int32_t mpu_mg(float value)
@@ -361,6 +395,7 @@ static void bt_exec(char *cmd)
             BT_SendString("-ERR,LOCKED");
             return;
         }
+        radar_on = 0U; /* 手动指定角度 = 退出雷达模式 */
         bt_servo_set(bt_atoi(argv[1]));
         BT_SendString("+OK");
     } else if (bt_ieq(argv[0], "LOCK")) {
@@ -369,7 +404,54 @@ static void bt_exec(char *cmd)
             return;
         }
         Servo_lock = (bt_atoi(argv[1]) != 0) ? 1U : 0U;
+        if (Servo_lock != 0U) {
+            radar_on = 0U;     /* 锁定即退出雷达模式 */
+            Servo_SweepStop(); /* 扫描/插补一起取消 */
+        }
         BT_SendString("+OK");
+    } else if (bt_ieq(argv[0], "SWEEP")) {
+        if (argc < 2U) {
+            BT_SendString("-ERR,ARG");
+            return;
+        }
+        radar_on = 0U; /* 单纯扫描，不带上报 */
+        int32_t dps = bt_atoi(argv[1]);
+        if (dps <= 0) {
+            Servo_SweepStop();
+        } else {
+            if (Servo_lock != 0U) {
+                BT_SendString("-ERR,LOCKED");
+                return;
+            }
+            Servo_SweepStart((uint16_t)((dps > 6000) ? 6000 : dps));
+        }
+        BT_SendString("+OK");
+    } else if (bt_ieq(argv[0], "RADAR")) {
+        if (argc < 2U) {
+            BT_SendString("-ERR,ARG");
+            return;
+        }
+        if (bt_atoi(argv[1]) != 0) {
+            if (Servo_lock != 0U) {
+                BT_SendString("-ERR,LOCKED");
+                return;
+            }
+            int32_t dps = (argc >= 3U) ? bt_atoi(argv[2]) : 60;
+            if (dps < 5) {
+                dps = 5;
+            }
+            if (dps > 6000) {
+                dps = 6000;
+            }
+            Servo_SweepStart((uint16_t)dps);
+            radar_last_tick = HAL_GetTick();
+            radar_on = 1U;
+            BT_SendString("+OK,RADAR=1");
+        } else {
+            radar_on = 0U;
+            Servo_SweepStop();
+            BT_SendString("+OK,RADAR=0");
+        }
     } else if (bt_ieq(argv[0], "STREAM")) {
         stream_on = (uint8_t)((argc >= 2U && bt_atoi(argv[1]) != 0) ? 1U : 0U);
         if (argc >= 3U) {
@@ -404,7 +486,7 @@ static void bt_exec(char *cmd)
     } else if (bt_ieq(argv[0], "VER")) {
         BT_SendString("+VER,BASH-STM32," BT_FW_VERSION);
     } else if (bt_ieq(argv[0], "HELP")) {
-        BT_SendString("+HELP,PING|GET|SERVO,deg|LOCK,0/1|STREAM,0/1,ms|BAUD,rate|SYS|VER|RESET");
+        BT_SendString("+HELP,PING|GET|SERVO,deg|SWEEP,dps(0=stop)|RADAR,0/1[,dps]|LOCK,0/1|STREAM,0/1,ms|BAUD,rate|SYS|VER|RESET");
     } else if (bt_ieq(argv[0], "RESET")) {
         BT_SendString("+BYE");
         HAL_Delay(60); /* 等待发送缓冲排空 */
@@ -466,6 +548,16 @@ void BT_Process(void)
     if (stream_on != 0U && (now - stream_last_tick) >= stream_period) {
         stream_last_tick = now;
         bt_send_telemetry();
+    }
+
+    /* 雷达模式：面板锁定或界面把扫描停了，就自动退出，别一直报同一个角度 */
+    if (radar_on != 0U && (Servo_lock != 0U || Servo_IsMoving() == 0U)) {
+        radar_on = 0U;
+    }
+
+    if (radar_on != 0U && (now - radar_last_tick) >= BT_RADAR_PERIOD_MS) {
+        radar_last_tick = now;
+        bt_send_radar();
     }
 
     /* 待切换波特率：等发送缓冲彻底排空再改，避免最后几个字节按新速率发出 */
