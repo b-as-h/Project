@@ -15,9 +15,6 @@ extern "C" {
 /** 中文 16x16 字体数据（每字符 36 字节：4字节UTF-8头 + 32字节位图）。 */
 extern const uint8_t zh16x16[][36];
 
-/** 中文字符数量 */
-#define ZH16x16_COUNT 24
-
 /**
  * @brief 绘制单个 ASCII 字符（6x8 位图）
  * @param x 起始 X 坐标

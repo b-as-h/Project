@@ -50,7 +50,17 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(Temperature_Humidity_GPIO_Port, Temperature_Humidity_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(T_GPIO_Port, T_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin : Temperature_Humidity_Pin */
+  GPIO_InitStruct.Pin = Temperature_Humidity_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(Temperature_Humidity_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Light_do_Pin confirm_key_Pin */
   GPIO_InitStruct.Pin = Light_do_Pin|confirm_key_Pin;

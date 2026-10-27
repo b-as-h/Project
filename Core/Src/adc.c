@@ -81,16 +81,10 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     /* ADC1 clock enable */
     __HAL_RCC_ADC1_CLK_ENABLE();
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
     /**ADC1 GPIO Configuration
-    PA7     ------> ADC1_IN7
     PB1     ------> ADC1_IN9
     */
-    GPIO_InitStruct.Pin = Temperature_Humidity_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    HAL_GPIO_Init(Temperature_Humidity_GPIO_Port, &GPIO_InitStruct);
-
     GPIO_InitStruct.Pin = Light_ao_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     HAL_GPIO_Init(Light_ao_GPIO_Port, &GPIO_InitStruct);
@@ -113,11 +107,8 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     __HAL_RCC_ADC1_CLK_DISABLE();
 
     /**ADC1 GPIO Configuration
-    PA7     ------> ADC1_IN7
     PB1     ------> ADC1_IN9
     */
-    HAL_GPIO_DeInit(Temperature_Humidity_GPIO_Port, Temperature_Humidity_Pin);
-
     HAL_GPIO_DeInit(Light_ao_GPIO_Port, Light_ao_Pin);
 
   /* USER CODE BEGIN ADC1_MspDeInit 1 */

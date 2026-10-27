@@ -12,12 +12,13 @@
 /*
  * 硬件定义 —— CubeMX 已配置 GPIO。
  * 编码器: TIM2 CH1/CH2 = PA0/PA1（CubeMX Encoder 模式）
- * 按键:   PB10 = EC11 确认键（内部上拉，按下=低电平）
+ * 按键:   confirm_key_Pin = PB10，EC11 确认键（内部上拉，按下=低电平）
  *         消抖由 BASH_UI 内部处理（UI_KEY_DEBOUNCE_MS）。
+ *
+ * 确认键的端口/引脚直接用 main.h 里由 CubeMX 生成的 confirm_key_GPIO_Port
+ * 和 confirm_key_Pin，不再在这里另写一份。之前两处各自定义 GPIOB/PIN_10，
+ * 一旦 CubeMX 里换了脚，这边不会跟着变，编译不报错但按键会失效。
  */
-
-#define CONFIRM_PORT  GPIOB
-#define CONFIRM_PIN   GPIO_PIN_10
 
 static int16_t input_last_encoder;  /**< 上次读取的编码器计数值。 */
 
@@ -44,8 +45,8 @@ UI_Input Input_Read(void)
         input_last_encoder = current;
     }
 
-    /* PB10 确认键：内部上拉，按下读到低电平，取反后 1=按下 */
-    if (HAL_GPIO_ReadPin(CONFIRM_PORT, CONFIRM_PIN) == GPIO_PIN_RESET) {
+    /* 确认键：内部上拉，按下读到低电平 */
+    if (HAL_GPIO_ReadPin(confirm_key_GPIO_Port, confirm_key_Pin) == GPIO_PIN_RESET) {
         input.keys |= UI_KEY_OK;
     }
 
